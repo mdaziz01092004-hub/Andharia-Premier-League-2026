@@ -4,9 +4,9 @@
  */
 
 import React, { useState } from 'react';
-import { Team, PlayerRegistration } from '../types';
+import { Team, PlayerRegistration, AppUser } from '../types';
 import { 
-  Users, UserPlus, Phone, MapPin, Star, Plus, Trash2, CheckCircle2, ShieldAlert, Sparkles, HelpCircle 
+  Users, UserPlus, Phone, MapPin, Star, Plus, Trash2, CheckCircle2, ShieldAlert, Sparkles, HelpCircle, UserCheck 
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 
@@ -15,9 +15,18 @@ interface RegistrationFormProps {
   onAddTeam: (team: Team) => void;
   players: PlayerRegistration[];
   onAddPlayer: (player: PlayerRegistration) => void;
+  currentUser: AppUser | null;
+  onOpenAuthModal: () => void;
 }
 
-export default function RegistrationForm({ teams, onAddTeam, players, onAddPlayer }: RegistrationFormProps) {
+export default function RegistrationForm({ 
+  teams, 
+  onAddTeam, 
+  players, 
+  onAddPlayer,
+  currentUser,
+  onOpenAuthModal
+}: RegistrationFormProps) {
   const [activeTab, setActiveTab] = useState<'team' | 'player'>('team');
   
   // Team Form State
@@ -40,6 +49,19 @@ export default function RegistrationForm({ teams, onAddTeam, players, onAddPlaye
   const [experience, setExperience] = useState('');
   const [playerError, setPlayerError] = useState('');
   const [playerSuccess, setPlayerSuccess] = useState(false);
+
+  // Auto-fill form fields when user logs in or switches tabs
+  React.useEffect(() => {
+    if (currentUser) {
+      if (activeTab === 'team') {
+        setCaptainName(currentUser.fullName);
+        setContactNumber(currentUser.mobileNumber);
+      } else {
+        setFullName(currentUser.fullName);
+        setPlayerContact(currentUser.mobileNumber);
+      }
+    }
+  }, [currentUser, activeTab]);
 
   // Available Colors
   const colors = [
@@ -162,13 +184,30 @@ export default function RegistrationForm({ teams, onAddTeam, players, onAddPlaye
         
         {/* Team Registration Form */}
         <div>
-          <div className="flex items-center gap-3 border-b border-white/10 pb-4 mb-6">
-            <div className="p-2.5 bg-blue-500/10 rounded-xl border border-blue-500/20 text-blue-400">
-              <Users className="w-5 h-5 animate-pulse" />
+          <div className="flex items-center justify-between gap-3 border-b border-white/10 pb-4 mb-6">
+            <div className="flex items-center gap-3">
+              <div className="p-2.5 bg-blue-500/10 rounded-xl border border-blue-500/20 text-blue-400">
+                <Users className="w-5 h-5 animate-pulse" />
+              </div>
+              <div>
+                <h3 className="text-base font-display font-bold text-white">Team Registration Portal</h3>
+              </div>
             </div>
-            <div>
-              <h3 className="text-base font-display font-bold text-white">Team Registration Portal</h3>
-            </div>
+
+            {currentUser ? (
+              <span className="text-[10px] bg-blue-500/10 border border-blue-500/20 px-2.5 py-1 rounded-full text-blue-300 font-bold flex items-center gap-1 font-sans">
+                <UserCheck className="w-3.5 h-3.5 text-blue-400" />
+                <span>Auto-filled as {currentUser.fullName}</span>
+              </span>
+            ) : (
+              <button
+                type="button"
+                onClick={onOpenAuthModal}
+                className="text-[10px] bg-amber-500/10 border border-amber-500/20 px-2.5 py-1 rounded-full text-amber-300 font-bold hover:bg-amber-500/20 transition-all cursor-pointer font-sans"
+              >
+                🔑 Sign in to Auto-fill
+              </button>
+            )}
           </div>
 
           <motion.form

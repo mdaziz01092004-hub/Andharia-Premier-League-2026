@@ -81,7 +81,7 @@ export default function PrizeMoney() {
           </span>
           <h3 className="text-xl font-display font-bold text-white mt-4">1st Prize (প্রথম পুরস্কার)</h3>
           <p className="text-slate-300 text-xs mt-1.5 font-sans leading-relaxed">
-            বেস প্রাইজ: <span className="font-bold text-amber-300">₹১১,০০০</span> <br />
+            Main Prize: <span className="font-bold text-amber-300">₹১১,০০০</span> <br />
             <span className="text-amber-200/85">৬০% অতিরিক্ত টাকা</span> প্রথম পুরস্কারে যোগ করা হবে।
           </p>
         </div>
@@ -117,7 +117,7 @@ export default function PrizeMoney() {
           </span>
           <h3 className="text-xl font-display font-bold text-white mt-4">2nd Prize (দ্বিতীয় পুরস্কার)</h3>
           <p className="text-slate-300 text-xs mt-1.5 font-sans leading-relaxed">
-            বেস প্রাইজ: <span className="font-bold text-slate-300">₹৭,০০০</span> <br />
+            Main Prize: <span className="font-bold text-slate-300">₹৭,০০০</span> <br />
             <span className="text-slate-300/85">৪০% অতিরিক্ত টাকা</span> দ্বিতীয় পুরস্কারে যোগ করা হবে।
           </p>
         </div>

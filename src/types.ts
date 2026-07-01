@@ -50,4 +50,18 @@ export interface Rule {
   visible: boolean;
 }
 
+export interface AppUser {
+  fullName: string;
+  mobileNumber: string;
+}
+
+export interface WhatsAppContact {
+  id: string;
+  name: string;
+  phone: string;
+  message: string;
+  visible: boolean;
+}
+
+
 

@@ -4,10 +4,10 @@
  */
 
 import React, { useState, useEffect, useRef } from 'react';
-import { Team, PlayerRegistration, Poll, VisibilityConfig, Rule } from '../types';
+import { Team, PlayerRegistration, Poll, VisibilityConfig, Rule, WhatsAppContact } from '../types';
 import { 
   Shield, Settings, Trash2, Edit2, Plus, CheckCircle2, XCircle, Users, Award, Vote, IndianRupee, Save, Undo, Eye, EyeOff, Music, Upload, Trash, Play, Pause, ShieldAlert, Database, Copy, AlertTriangle,
-  ClipboardList, Check, X, Phone, MapPin, Calendar, HelpCircle
+  ClipboardList, Check, X, Phone, MapPin, Calendar, HelpCircle, MessageSquare
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { getCustomAudio, saveCustomAudio, deleteCustomAudio } from '../utils/audioDb';
@@ -18,6 +18,8 @@ interface AdminPanelProps {
   players: PlayerRegistration[];
   polls: Poll[];
   rules: Rule[];
+  whatsAppContacts: WhatsAppContact[];
+  onUpdateWhatsAppContacts: (contacts: WhatsAppContact[]) => void;
   onUpdateTeams: (teams: Team[]) => void;
   onUpdatePlayers: (players: PlayerRegistration[]) => void;
   onUpdatePolls: (polls: Poll[]) => void;
@@ -37,6 +39,8 @@ export default function AdminPanel({
   players,
   polls,
   rules = [],
+  whatsAppContacts = [],
+  onUpdateWhatsAppContacts,
   onUpdateTeams,
   onUpdatePlayers,
   onUpdatePolls,
@@ -50,7 +54,7 @@ export default function AdminPanel({
   onUpdatePassword,
   onLogout
 }: AdminPanelProps) {
-  const [activeSubTab, setActiveSubTab] = useState<'teams' | 'submissions' | 'players' | 'polls' | 'visibility' | 'music' | 'rules' | 'security'>('teams');
+  const [activeSubTab, setActiveSubTab] = useState<'teams' | 'submissions' | 'players' | 'polls' | 'visibility' | 'music' | 'rules' | 'security' | 'whatsapp'>('teams');
   const [newSubAdminEmail, setNewSubAdminEmail] = useState('');
   const [newPasswordInput, setNewPasswordInput] = useState('');
   const [passwordUpdateStatus, setPasswordUpdateStatus] = useState<string | null>(null);
@@ -91,6 +95,15 @@ export default function AdminPanel({
   const [pollForm, setPollForm] = useState<Partial<Poll>>({
     option: '',
     votes: 0
+  });
+
+  // Edit / Add States for WhatsApp Contacts
+  const [editingWhatsAppId, setEditingWhatsAppId] = useState<string | null>(null);
+  const [whatsAppForm, setWhatsAppForm] = useState<Partial<WhatsAppContact>>({
+    name: '',
+    phone: '',
+    message: '',
+    visible: true
   });
 
   // Background Music States
@@ -442,6 +455,82 @@ export default function AdminPanel({
     }
   };
 
+  // ================= WHATSAPP CONTACTS CRUD =================
+  const startEditWhatsApp = (contact: WhatsAppContact) => {
+    setEditingWhatsAppId(contact.id);
+    setWhatsAppForm({ ...contact });
+  };
+
+  const startAddWhatsApp = () => {
+    setEditingWhatsAppId('new');
+    setWhatsAppForm({
+      name: '',
+      phone: '',
+      message: "Hello, I'm inquiring about the Andharia Premier League.",
+      visible: true
+    });
+  };
+
+  const cancelWhatsAppEdit = () => {
+    setEditingWhatsAppId(null);
+    setWhatsAppForm({});
+  };
+
+  const saveWhatsAppContact = () => {
+    if (!whatsAppForm.name || !whatsAppForm.phone) {
+      showNotification('Please fill in Name and Phone Number.', 'error');
+      return;
+    }
+
+    // Clean up phone number (remove space, dash, or non-numeric characters)
+    const cleanedPhone = whatsAppForm.phone.replace(/[^0-9]/g, '');
+    if (cleanedPhone.length < 10) {
+      showNotification('Please enter a valid phone number (at least 10 digits).', 'error');
+      return;
+    }
+
+    let updatedContacts: WhatsAppContact[];
+    if (editingWhatsAppId === 'new') {
+      const newContact: WhatsAppContact = {
+        id: `wa-${Date.now()}`,
+        name: whatsAppForm.name,
+        phone: cleanedPhone,
+        message: whatsAppForm.message || "Hello, I'm inquiring about the Andharia Premier League.",
+        visible: whatsAppForm.visible !== false
+      };
+      updatedContacts = [...whatsAppContacts, newContact];
+      showNotification(`WhatsApp contact "${newContact.name}" added successfully.`);
+    } else {
+      updatedContacts = whatsAppContacts.map(c => 
+        c.id === editingWhatsAppId ? { 
+          ...c, 
+          name: whatsAppForm.name!, 
+          phone: cleanedPhone, 
+          message: whatsAppForm.message || '', 
+          visible: whatsAppForm.visible !== false 
+        } : c
+      );
+      showNotification(`WhatsApp contact "${whatsAppForm.name}" updated successfully.`);
+    }
+
+    onUpdateWhatsAppContacts(updatedContacts);
+    setEditingWhatsAppId(null);
+  };
+
+  const deleteWhatsAppContact = (id: string) => {
+    if (window.confirm('Are you sure you want to delete this WhatsApp contact button?')) {
+      const updated = whatsAppContacts.filter(c => c.id !== id);
+      onUpdateWhatsAppContacts(updated);
+      showNotification('WhatsApp contact deleted successfully.');
+    }
+  };
+
+  const toggleWhatsAppVisibility = (id: string) => {
+    const updated = whatsAppContacts.map(c => c.id === id ? { ...c, visible: !c.visible } : c);
+    onUpdateWhatsAppContacts(updated);
+    showNotification('WhatsApp contact button visibility updated.');
+  };
+
   const colorsList = [
     { value: 'from-blue-600 to-indigo-800', name: 'Ocean Royal' },
     { value: 'from-orange-500 to-red-700', name: 'Fiery Blaster' },
@@ -696,6 +785,18 @@ export default function AdminPanel({
         >
           <ShieldAlert className="w-4 h-4" />
           Rules CRUD ({rules.length})
+        </button>
+
+        <button
+          onClick={() => { setActiveSubTab('whatsapp'); }}
+          className={`px-4 py-2 text-xs font-display font-bold rounded-lg transition-all flex items-center gap-2 ${
+            activeSubTab === 'whatsapp'
+              ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/20'
+              : 'text-slate-400 hover:text-white hover:bg-white/5'
+          }`}
+        >
+          <MessageSquare className="w-4 h-4 text-emerald-400" />
+          WhatsApp Customizer ({whatsAppContacts.length})
         </button>
 
         {adminEmail?.toLowerCase() === 'mdaziz01092004@gmail.com' && (
@@ -1122,10 +1223,90 @@ export default function AdminPanel({
             </button>
           </motion.div>
         )}
+
+        {/* ======================= WHATSAPP CONTACT EDITOR FORM ======================= */}
+        {activeSubTab === 'whatsapp' && editingWhatsAppId && (
+          <motion.div
+            initial={{ opacity: 0, y: -10 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="p-5 rounded-2xl bg-slate-950/40 border border-emerald-500/25 space-y-4"
+          >
+            <div className="flex justify-between items-center pb-2 border-b border-white/5">
+              <h3 className="text-sm font-display font-bold text-emerald-300">
+                {editingWhatsAppId === 'new' ? '✨ Add New WhatsApp Contact' : '📝 Edit WhatsApp Contact'}
+              </h3>
+              <button 
+                onClick={cancelWhatsAppEdit}
+                className="text-slate-400 hover:text-white text-xs flex items-center gap-1 font-semibold cursor-pointer"
+              >
+                <Undo className="w-3.5 h-3.5" /> Cancel
+              </button>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-[10px] uppercase font-bold text-slate-400 mb-1">Contact Name</label>
+                <input
+                  type="text"
+                  value={whatsAppForm.name || ''}
+                  onChange={(e) => setWhatsAppForm({ ...whatsAppForm, name: e.target.value })}
+                  className="w-full glass-input px-3 py-1.5 text-xs"
+                  placeholder="e.g. Aminul Islam Chowdhury"
+                />
+              </div>
+              <div>
+                <label className="block text-[10px] uppercase font-bold text-slate-400 mb-1">WhatsApp Number (With Country Code)</label>
+                <input
+                  type="text"
+                  value={whatsAppForm.phone || ''}
+                  onChange={(e) => setWhatsAppForm({ ...whatsAppForm, phone: e.target.value })}
+                  className="w-full glass-input px-3 py-1.5 text-xs font-mono"
+                  placeholder="e.g. 919883177907"
+                />
+                <p className="text-[9px] text-slate-500 mt-0.5">Note: Do not include +, spaces or hyphens. Example: 919883177907 for Indian numbers.</p>
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-[10px] uppercase font-bold text-slate-400 mb-1">Pre-filled Message text</label>
+              <textarea
+                value={whatsAppForm.message || ''}
+                onChange={(e) => setWhatsAppForm({ ...whatsAppForm, message: e.target.value })}
+                rows={2}
+                className="w-full glass-input px-3 py-1.5 text-xs font-sans"
+                placeholder="e.g. Hello Aminul, I'm inquiring about registration."
+              />
+              <p className="text-[9px] text-slate-500 mt-0.5">When users click the button, this text will be automatically typed in their chat.</p>
+            </div>
+
+            <div>
+              <label className="block text-[10px] uppercase font-bold text-slate-400 mb-1">Status & Visibility</label>
+              <div className="flex items-center h-8">
+                <label className="inline-flex items-center gap-2 text-xs text-white cursor-pointer select-none">
+                  <input
+                    type="checkbox"
+                    checked={whatsAppForm.visible !== false}
+                    onChange={(e) => setWhatsAppForm({ ...whatsAppForm, visible: e.target.checked })}
+                    className="rounded border-white/10 bg-slate-950/40 text-emerald-500 focus:ring-0 w-4 h-4 cursor-pointer"
+                  />
+                  <span>Show floating button and footer listing immediately</span>
+                </label>
+              </div>
+            </div>
+
+            <button
+              onClick={saveWhatsAppContact}
+              className="w-full py-2.5 bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-600 hover:to-teal-700 text-white font-display font-bold text-xs rounded-xl flex items-center justify-center gap-2 cursor-pointer"
+            >
+              <Save className="w-4 h-4" />
+              Save WhatsApp Contact
+            </button>
+          </motion.div>
+        )}
       </div>
 
       {/* ======================= DATABASE TABLES / VIEWS ======================= */}
-      {activeSubTab !== 'visibility' && activeSubTab !== 'music' && activeSubTab !== 'rules' && activeSubTab !== 'submissions' ? (
+      {activeSubTab !== 'visibility' && activeSubTab !== 'music' && activeSubTab !== 'rules' && activeSubTab !== 'submissions' && activeSubTab !== 'whatsapp' ? (
         <div className="overflow-x-auto border border-white/5 rounded-2xl bg-slate-950/20 max-h-[400px]">
         {/* TEAMS DATA LIST */}
         {activeSubTab === 'teams' && (
@@ -2085,6 +2266,113 @@ export default function AdminPanel({
             </div>
           </div>
         </div>
+      ) : activeSubTab === 'whatsapp' ? (
+        <div className="border border-white/5 rounded-2xl bg-slate-950/20 p-6 space-y-6">
+          <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-4 border-b border-white/5">
+            <div>
+              <h3 className="text-base font-display font-bold text-white flex items-center gap-2">
+                <MessageSquare className="w-5 h-5 text-emerald-400" />
+                WhatsApp Contact Customizer
+              </h3>
+              <p className="text-xs text-slate-400 mt-1">
+                Customize contact persons, phone numbers, and default WhatsApp messages that appear on the public pages and the floating buttons.
+              </p>
+            </div>
+            {!editingWhatsAppId && (
+              <button
+                onClick={startAddWhatsApp}
+                className="px-3.5 py-1.5 text-xs font-semibold bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-300 border border-emerald-500/20 rounded-xl transition-all flex items-center gap-1.5 cursor-pointer"
+              >
+                <Plus className="w-3.5 h-3.5" />
+                Add Contact Button
+              </button>
+            )}
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            {whatsAppContacts.length === 0 ? (
+              <div className="md:col-span-2 py-12 text-center text-slate-500">
+                <MessageSquare className="w-12 h-12 text-slate-600 mx-auto mb-3" />
+                <p className="text-sm font-semibold">No WhatsApp contact buttons created.</p>
+                <p className="text-xs text-slate-600 mt-1">Click "Add Contact Button" to create one.</p>
+              </div>
+            ) : (
+              whatsAppContacts.map((contact) => (
+                <div 
+                  key={contact.id}
+                  className={`p-5 rounded-2xl border transition-all duration-300 relative overflow-hidden flex flex-col justify-between ${
+                    contact.visible 
+                      ? 'bg-slate-950/60 border-emerald-500/20 shadow-lg shadow-emerald-500/[0.03]' 
+                      : 'bg-slate-950/25 border-white/5 opacity-70'
+                  }`}
+                >
+                  <div className="absolute top-0 right-0 w-24 h-24 bg-emerald-500/[0.02] rounded-full blur-2xl pointer-events-none" />
+                  
+                  <div>
+                    <div className="flex items-center justify-between mb-2">
+                      <h4 className="text-sm font-display font-bold text-white flex items-center gap-2">
+                        {contact.name}
+                      </h4>
+                      <span className={`px-2 py-0.5 rounded-full text-[9px] font-mono font-bold tracking-wider uppercase ${
+                        contact.visible 
+                          ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' 
+                          : 'bg-rose-500/10 text-rose-400 border border-rose-500/20'
+                      }`}>
+                        {contact.visible ? 'Visible' : 'Hidden'}
+                      </span>
+                    </div>
+
+                    <div className="text-xs text-emerald-400 font-mono flex items-center gap-1.5 mb-3">
+                      <Phone className="w-3.5 h-3.5" />
+                      +{contact.phone}
+                    </div>
+
+                    <div className="text-xs bg-slate-950/50 border border-white/5 p-3 rounded-xl mb-4">
+                      <span className="block text-[9px] text-slate-500 uppercase font-bold tracking-wider mb-1">Pre-filled Chat Message</span>
+                      <p className="text-slate-300 font-sans leading-relaxed italic">"{contact.message}"</p>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center justify-between border-t border-white/5 pt-4 mt-auto">
+                    <button
+                      onClick={() => toggleWhatsAppVisibility(contact.id)}
+                      className={`text-xs font-semibold flex items-center gap-1 cursor-pointer ${
+                        contact.visible ? 'text-rose-400 hover:text-rose-300' : 'text-emerald-400 hover:text-emerald-300'
+                      }`}
+                    >
+                      {contact.visible ? (
+                        <>
+                          <EyeOff className="w-4 h-4" /> Hide Button
+                        </>
+                      ) : (
+                        <>
+                          <Eye className="w-4 h-4" /> Show Button
+                        </>
+                      )}
+                    </button>
+
+                    <div className="flex items-center gap-2">
+                      <button
+                        onClick={() => startEditWhatsApp(contact)}
+                        className="p-1.5 bg-white/5 hover:bg-white/10 text-slate-300 hover:text-white rounded-lg border border-white/5 hover:border-white/10 transition-all flex items-center gap-1 cursor-pointer text-xs font-semibold"
+                        title="Edit Contact details"
+                      >
+                        <Edit2 className="w-3.5 h-3.5" /> Edit
+                      </button>
+                      <button
+                        onClick={() => deleteWhatsAppContact(contact.id)}
+                        className="p-1.5 bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 hover:text-rose-300 rounded-lg border border-rose-500/10 hover:border-rose-500/20 transition-all flex items-center gap-1 cursor-pointer text-xs font-semibold"
+                        title="Delete contact button"
+                      >
+                        <Trash className="w-3.5 h-3.5" /> Delete
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+        </div>
       ) : (
         /* Fallback empty view or error state */
         <div className="p-8 text-center text-slate-500 italic text-xs">
@@ -2097,7 +2385,7 @@ export default function AdminPanel({
         {activeSubTab === 'teams' && !editingTeamId && (
           <button
             onClick={startAddTeam}
-            className="px-4 py-2 bg-blue-500/20 hover:bg-blue-500/30 text-blue-300 font-display font-bold text-xs rounded-lg border border-blue-500/30 flex items-center gap-2 transition-all"
+            className="px-4 py-2 bg-blue-500/20 hover:bg-blue-500/30 text-blue-300 font-display font-bold text-xs rounded-lg border border-blue-500/30 flex items-center gap-2 transition-all cursor-pointer"
           >
             <Plus className="w-4 h-4" /> Add Custom Team Slot
           </button>
@@ -2105,7 +2393,7 @@ export default function AdminPanel({
         {activeSubTab === 'players' && !editingPlayerId && (
           <button
             onClick={startAddPlayer}
-            className="px-4 py-2 bg-indigo-500/20 hover:bg-indigo-500/30 text-indigo-300 font-display font-bold text-xs rounded-lg border border-indigo-500/30 flex items-center gap-2 transition-all"
+            className="px-4 py-2 bg-indigo-500/20 hover:bg-indigo-500/30 text-indigo-300 font-display font-bold text-xs rounded-lg border border-indigo-500/30 flex items-center gap-2 transition-all cursor-pointer"
           >
             <Plus className="w-4 h-4" /> Add Custom Draft Player
           </button>
@@ -2113,7 +2401,7 @@ export default function AdminPanel({
         {activeSubTab === 'polls' && !editingPollId && (
           <button
             onClick={startAddPoll}
-            className="px-4 py-2 bg-purple-500/20 hover:bg-purple-500/30 text-purple-300 font-display font-bold text-xs rounded-lg border border-purple-500/30 flex items-center gap-2 transition-all"
+            className="px-4 py-2 bg-purple-500/20 hover:bg-purple-500/30 text-purple-300 font-display font-bold text-xs rounded-lg border border-purple-500/30 flex items-center gap-2 transition-all cursor-pointer"
           >
             <Plus className="w-4 h-4" /> Add Custom Poll Option
           </button>
@@ -2124,6 +2412,14 @@ export default function AdminPanel({
             className="px-4 py-2 bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 font-display font-bold text-xs rounded-lg border border-amber-500/30 flex items-center gap-2 transition-all cursor-pointer"
           >
             <Plus className="w-4 h-4" /> Add Custom Tournament Rule
+          </button>
+        )}
+        {activeSubTab === 'whatsapp' && !editingWhatsAppId && (
+          <button
+            onClick={startAddWhatsApp}
+            className="px-4 py-2 bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 font-display font-bold text-xs rounded-lg border border-emerald-500/30 flex items-center gap-2 transition-all cursor-pointer"
+          >
+            <Plus className="w-4 h-4" /> Add WhatsApp Contact Button
           </button>
         )}
       </div>

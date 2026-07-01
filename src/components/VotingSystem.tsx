@@ -4,34 +4,55 @@
  */
 
 import { useState, useEffect } from 'react';
-import { Poll } from '../types';
-import { BarChart3, Vote, Heart, Sparkles, CheckCircle2 } from 'lucide-react';
+import { Poll, AppUser } from '../types';
+import { BarChart3, Vote, Heart, Sparkles, CheckCircle2, UserCheck } from 'lucide-react';
 import { motion } from 'motion/react';
 
 interface VotingSystemProps {
   polls: Poll[];
   onVote: (pollId: string) => void;
+  currentUser: AppUser | null;
+  onOpenAuthModal: () => void;
 }
 
-export default function VotingSystem({ polls, onVote }: VotingSystemProps) {
+export default function VotingSystem({ polls, onVote, currentUser, onOpenAuthModal }: VotingSystemProps) {
   const [hasVoted, setHasVoted] = useState(false);
   const [selectedPollId, setSelectedPollId] = useState<string | null>(null);
 
   useEffect(() => {
-    const votedState = localStorage.getItem('apl_2026_voted');
-    if (votedState) {
-      setHasVoted(true);
-      setSelectedPollId(votedState);
+    if (currentUser) {
+      const votedState = localStorage.getItem(`apl_voted_${currentUser.mobileNumber}`);
+      if (votedState) {
+        setHasVoted(true);
+        setSelectedPollId(votedState);
+      } else {
+        setHasVoted(false);
+        setSelectedPollId(null);
+      }
+    } else {
+      const votedState = localStorage.getItem('apl_2026_voted');
+      if (votedState) {
+        setHasVoted(true);
+        setSelectedPollId(votedState);
+      } else {
+        setHasVoted(false);
+        setSelectedPollId(null);
+      }
     }
-  }, []);
+  }, [currentUser]);
 
   const totalVotes = polls.reduce((acc, curr) => acc + curr.votes, 0);
 
   const handleVoteSubmit = (pollId: string) => {
+    if (!currentUser) {
+      onOpenAuthModal();
+      return;
+    }
     if (hasVoted) return;
     onVote(pollId);
     setSelectedPollId(pollId);
     setHasVoted(true);
+    localStorage.setItem(`apl_voted_${currentUser.mobileNumber}`, pollId);
     localStorage.setItem('apl_2026_voted', pollId);
   };
 
@@ -69,9 +90,26 @@ export default function VotingSystem({ polls, onVote }: VotingSystemProps) {
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
         {/* Left Side: Interactive Poll Cards */}
         <div className="lg:col-span-6 space-y-3">
-          <h3 className="text-sm font-display font-semibold text-slate-300 uppercase tracking-widest mb-3">
-            {hasVoted ? 'Your Ballot Submitted' : 'Select Team to Vote'}
-          </h3>
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-3">
+            <h3 className="text-sm font-display font-semibold text-slate-300 uppercase tracking-widest">
+              {hasVoted ? 'Your Ballot Submitted' : 'Select Team to Vote'}
+            </h3>
+            {!currentUser && (
+              <button 
+                type="button"
+                onClick={onOpenAuthModal}
+                className="text-[10px] text-amber-400 hover:text-amber-300 font-sans font-bold hover:underline self-start cursor-pointer"
+              >
+                ⚠️ Sign in to vote
+              </button>
+            )}
+            {currentUser && !hasVoted && (
+              <span className="text-[10px] text-blue-400 font-sans flex items-center gap-1 font-bold">
+                <UserCheck className="w-3.5 h-3.5" />
+                Voting as: {currentUser.fullName}
+              </span>
+            )}
+          </div>
 
           <div className="space-y-2.5 max-h-[380px] overflow-y-auto pr-1">
             {polls.map((poll) => {

@@ -4,7 +4,7 @@
  */
 
 import { useState, useEffect } from 'react';
-import { Team, PlayerRegistration, Poll, VisibilityConfig, Rule } from './types';
+import { Team, PlayerRegistration, Poll, VisibilityConfig, Rule, AppUser, WhatsAppContact } from './types';
 import { INITIAL_TEAMS, INITIAL_PLAYERS, INITIAL_POLLS, INITIAL_RULES } from './initialData';
 import AudioPlayer from './components/AudioPlayer';
 import PrizeMoney from './components/PrizeMoney';
@@ -12,9 +12,10 @@ import Rules from './components/Rules';
 import RegistrationForm from './components/RegistrationForm';
 import VotingSystem from './components/VotingSystem';
 import AdminPanel from './components/AdminPanel';
+import UserAuthModal from './components/UserAuthModal';
 
 import { 
-  Trophy, Calendar, MapPin, Users, Flame, Heart, AlertCircle, ShieldCheck, Mail, Phone, Info, Shield, Eye, EyeOff, Database, Menu, X
+  Trophy, Calendar, MapPin, Users, Flame, Heart, AlertCircle, ShieldCheck, Mail, Phone, Info, Shield, Eye, EyeOff, Database, Menu, X, User
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 
@@ -36,7 +37,11 @@ import {
   saveSubAdminDb,
   deleteSubAdminDb,
   fetchAdminPasswordDb,
-  saveAdminPasswordDb
+  saveAdminPasswordDb,
+  fetchUsersDb,
+  saveUserDb,
+  fetchWhatsAppContactsDb,
+  saveWhatsAppContactsDb
 } from './utils/supabase';
 
 export default function App() {
@@ -108,6 +113,82 @@ export default function App() {
     return localStorage.getItem('apl_admin_password') || 'v93h13q49';
   });
 
+  // User Accounts & Login state
+  const [currentUser, setCurrentUser] = useState<AppUser | null>(() => {
+    const saved = localStorage.getItem('apl_current_user');
+    return saved ? JSON.parse(saved) : null;
+  });
+
+  const [registeredUsers, setRegisteredUsers] = useState<AppUser[]>(() => {
+    const saved = localStorage.getItem('apl_registered_users');
+    return saved ? JSON.parse(saved) : [];
+  });
+
+  const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
+
+  const handleRegisterUser = async (user: AppUser) => {
+    const updated = [...registeredUsers, user];
+    setRegisteredUsers(updated);
+    localStorage.setItem('apl_registered_users', JSON.stringify(updated));
+    if (isSupabaseConfigured) {
+      try {
+        await saveUserDb(user);
+      } catch (err) {
+        console.error('Error saving user to database:', err);
+      }
+    }
+  };
+
+  const handleLoginUser = (user: AppUser) => {
+    setCurrentUser(user);
+    localStorage.setItem('apl_current_user', JSON.stringify(user));
+  };
+
+  const handleLogoutUser = () => {
+    setCurrentUser(null);
+    localStorage.removeItem('apl_current_user');
+  };
+
+  // WhatsApp Contacts State
+  const [whatsAppContacts, setWhatsAppContacts] = useState<WhatsAppContact[]>(() => {
+    const saved = localStorage.getItem('apl_whatsapp_contacts');
+    if (saved) {
+      try {
+        return JSON.parse(saved);
+      } catch (e) {
+        console.error('Error parsing WhatsApp contacts:', e);
+      }
+    }
+    return [
+      {
+        id: 'wa-1',
+        name: 'Aminul Islam Chowdhury',
+        phone: '919883177907',
+        message: "Hello Aminul Islam Chowdhury, I'm inquiring about the Andharia Premier League.",
+        visible: true
+      },
+      {
+        id: 'wa-2',
+        name: 'MD Aziz',
+        phone: '919593874231',
+        message: "Hello MD Aziz, I'm inquiring about the Andharia Premier League.",
+        visible: true
+      }
+    ];
+  });
+
+  const handleUpdateWhatsAppContacts = async (contacts: WhatsAppContact[]) => {
+    setWhatsAppContacts(contacts);
+    localStorage.setItem('apl_whatsapp_contacts', JSON.stringify(contacts));
+    if (isSupabaseConfigured) {
+      try {
+        await saveWhatsAppContactsDb(contacts);
+      } catch (err) {
+        console.error('Error saving WhatsApp contacts to DB:', err);
+      }
+    }
+  };
+
   useEffect(() => {
     const handleUrlChange = () => {
       const loggedIn = localStorage.getItem('apl_logged_in_admin');
@@ -149,53 +230,90 @@ export default function App() {
       if (!isSupabaseConfigured) return;
       setSupabaseStatus('loading');
       try {
-        const [dbTeams, dbPlayers, dbPolls, dbRules] = await Promise.all([
-          fetchTeamsDb(),
-          fetchPlayersDb(),
-          fetchPollsDb(),
-          fetchRulesDb()
-        ]);
+        // Fetch each main dataset individually with catch fallbacks so one missing table doesn't block others or crash the sync
+        const dbTeams = await fetchTeamsDb().catch((err) => {
+          console.warn('Failed to fetch teams from Supabase:', err);
+          return null;
+        });
+        const dbPlayers = await fetchPlayersDb().catch((err) => {
+          console.warn('Failed to fetch players from Supabase:', err);
+          return null;
+        });
+        const dbPolls = await fetchPollsDb().catch((err) => {
+          console.warn('Failed to fetch polls from Supabase:', err);
+          return null;
+        });
+        const dbRules = await fetchRulesDb().catch((err) => {
+          console.warn('Failed to fetch rules from Supabase:', err);
+          return null;
+        });
+
+        let loadedAny = false;
 
         if (dbTeams && dbTeams.length > 0) {
           setTeams(dbTeams);
           localStorage.setItem('apl_2026_teams', JSON.stringify(dbTeams));
+          loadedAny = true;
         }
         if (dbPlayers && dbPlayers.length > 0) {
           setPlayers(dbPlayers);
           localStorage.setItem('apl_2026_players', JSON.stringify(dbPlayers));
+          loadedAny = true;
         }
         if (dbPolls && dbPolls.length > 0) {
           setPolls(dbPolls);
           localStorage.setItem('apl_2026_polls', JSON.stringify(dbPolls));
+          loadedAny = true;
         }
         if (dbRules && dbRules.length > 0) {
           setRules(dbRules);
           localStorage.setItem('apl_2026_rules', JSON.stringify(dbRules));
+          loadedAny = true;
         }
 
-        // Try to fetch admins & settings from database (completely non-blocking/isolated try-catch)
+        // Try to fetch admins, settings, and users from database (completely non-blocking/isolated try-catch)
         try {
-          const [dbSubAdmins, dbPassword] = await Promise.all([
+          const [dbSubAdmins, dbPassword, dbUsers, dbWhatsApp] = await Promise.all([
             fetchSubAdminsDb().catch(() => []),
-            fetchAdminPasswordDb().catch(() => null)
+            fetchAdminPasswordDb().catch(() => null),
+            fetchUsersDb().catch(() => []),
+            fetchWhatsAppContactsDb().catch(() => null)
           ]);
           if (dbSubAdmins && dbSubAdmins.length > 0) {
             setSubAdmins(dbSubAdmins);
             localStorage.setItem('apl_sub_admins', JSON.stringify(dbSubAdmins));
+            loadedAny = true;
           }
           if (dbPassword) {
             setAdminPassword(dbPassword);
             localStorage.setItem('apl_admin_password', dbPassword);
+            loadedAny = true;
+          }
+          if (dbUsers && dbUsers.length > 0) {
+            setRegisteredUsers(dbUsers);
+            localStorage.setItem('apl_registered_users', JSON.stringify(dbUsers));
+            loadedAny = true;
+          }
+          if (dbWhatsApp && dbWhatsApp.length > 0) {
+            setWhatsAppContacts(dbWhatsApp);
+            localStorage.setItem('apl_whatsapp_contacts', JSON.stringify(dbWhatsApp));
+            loadedAny = true;
           }
         } catch (adminErr) {
-          console.warn('Could not load admins or custom password from Supabase tables (they might not be created yet):', adminErr);
+          console.warn('Could not load admins, users, whatsapp contacts or custom password from Supabase tables:', adminErr);
         }
 
-        setSupabaseStatus('success');
+        if (loadedAny) {
+          setSupabaseStatus('success');
+        } else {
+          // If connection works but all tables are completely empty or don't exist yet
+          setSupabaseStatus('error');
+          setSupabaseErrorMessage('Supabase is connected but tables are empty. Make sure to run the setup SQL script in your Supabase dashboard.');
+        }
       } catch (err: any) {
         console.error('Failed to load from Supabase:', err);
         setSupabaseStatus('error');
-        setSupabaseErrorMessage(err.message || 'Make sure database tables are set up.');
+        setSupabaseErrorMessage(err.message || 'Make sure your Supabase credentials are correct and tables are set up.');
       }
     }
     loadDataFromSupabase();
@@ -459,6 +577,29 @@ export default function App() {
           </div>
 
           <div className="flex items-center gap-3">
+            {/* User Portal Profile indicator */}
+            {currentUser ? (
+              <div className="flex items-center gap-2 bg-blue-500/10 border border-blue-500/20 px-3 py-1.5 rounded-xl">
+                <User className="w-3.5 h-3.5 text-blue-400" />
+                <span className="text-xs font-semibold text-blue-300 max-w-[100px] truncate">{currentUser.fullName}</span>
+                <button
+                  onClick={handleLogoutUser}
+                  className="text-[10px] text-rose-400 hover:text-rose-300 font-bold ml-1.5 hover:underline cursor-pointer"
+                  title="Log out from user portal"
+                >
+                  LOGOUT
+                </button>
+              </div>
+            ) : (
+              <button
+                onClick={() => setIsAuthModalOpen(true)}
+                className="px-3 py-1.5 bg-gradient-to-r from-blue-500 to-indigo-600 hover:from-blue-600 hover:to-indigo-700 text-white rounded-xl text-xs font-bold transition-all shadow-md active:scale-95 cursor-pointer flex items-center gap-1.5"
+              >
+                <User className="w-3.5 h-3.5" />
+                <span className="hidden sm:inline">Sign In</span>
+              </button>
+            )}
+
             {/* Supabase Status Indicator (discreet, if configured) */}
             {isSupabaseConfigured && (
               <span className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-mono ${
@@ -556,6 +697,40 @@ export default function App() {
                     <Flame className="w-4 h-4 text-indigo-400" />
                     Popularity Voting
                   </a>
+                )}
+              </div>
+
+              {/* User Portal section inside Hamburger Drawer */}
+              <div className="mt-6 pt-6 border-t border-white/5 space-y-3">
+                <span className="block text-[10px] font-mono tracking-widest text-slate-500 uppercase">User Portal</span>
+                {currentUser ? (
+                  <div className="p-3 bg-slate-950/40 rounded-2xl border border-white/5 space-y-2">
+                    <div className="flex items-center gap-2 text-white">
+                      <User className="w-4 h-4 text-blue-400" />
+                      <span className="text-xs font-bold truncate max-w-[150px]">{currentUser.fullName}</span>
+                    </div>
+                    <p className="text-[10px] text-slate-400 font-sans font-mono">{currentUser.mobileNumber}</p>
+                    <button
+                      onClick={() => {
+                        handleLogoutUser();
+                        setIsMenuOpen(false);
+                      }}
+                      className="w-full py-1.5 bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 rounded-lg text-[10px] font-bold transition-all border border-rose-500/15 cursor-pointer text-center"
+                    >
+                      Sign Out
+                    </button>
+                  </div>
+                ) : (
+                  <button
+                    onClick={() => {
+                      setIsAuthModalOpen(true);
+                      setIsMenuOpen(false);
+                    }}
+                    className="w-full py-2 bg-gradient-to-r from-blue-500 to-indigo-600 hover:from-blue-600 hover:to-indigo-700 text-white rounded-xl text-xs font-bold transition-all shadow-md cursor-pointer flex items-center justify-center gap-1.5"
+                  >
+                    <User className="w-4 h-4" />
+                    Sign In / Sign Up
+                  </button>
                 )}
               </div>
             </div>
@@ -791,6 +966,8 @@ export default function App() {
               onAddSubAdmin={handleAddSubAdmin}
               onRemoveSubAdmin={handleRemoveSubAdmin}
               onUpdatePassword={handleUpdatePassword}
+              whatsAppContacts={whatsAppContacts}
+              onUpdateWhatsAppContacts={handleUpdateWhatsAppContacts}
               onLogout={handleLogout}
             />
           </motion.section>
@@ -822,6 +999,8 @@ export default function App() {
               onAddTeam={handleAddTeam} 
               players={players} 
               onAddPlayer={handleAddPlayer} 
+              currentUser={currentUser}
+              onOpenAuthModal={() => setIsAuthModalOpen(true)}
             />
           </section>
         )}
@@ -831,7 +1010,12 @@ export default function App() {
         {/* Section 5: Voting System */}
         {visibility.votingPopularity && (
           <section id="voting-popularity">
-            <VotingSystem polls={polls} onVote={handleVote} />
+            <VotingSystem 
+              polls={polls} 
+              onVote={handleVote} 
+              currentUser={currentUser}
+              onOpenAuthModal={() => setIsAuthModalOpen(true)}
+            />
           </section>
         )}
 
@@ -869,20 +1053,15 @@ export default function App() {
           <div className="text-center md:text-right space-y-3">
             <h5 className="text-xs font-bold uppercase tracking-widest text-slate-400 font-display">Need Info & Registration?</h5>
             <div className="flex flex-col gap-2.5 text-xs text-slate-300 font-sans items-center md:items-end">
-              <div className="flex flex-col md:items-end">
-                <span className="font-bold text-white">Aminul Islam Chowdhury</span>
-                <span className="flex items-center gap-1.5 text-emerald-400 font-mono text-xs mt-0.5">
-                  <Phone className="w-3.5 h-3.5" />
-                  9883177907
-                </span>
-              </div>
-              <div className="flex flex-col md:items-end">
-                <span className="font-bold text-white">MD Aziz</span>
-                <span className="flex items-center gap-1.5 text-emerald-400 font-mono text-xs mt-0.5">
-                  <Phone className="w-3.5 h-3.5" />
-                  9593874231
-                </span>
-              </div>
+              {whatsAppContacts.filter(c => c.visible).map((contact) => (
+                <div key={contact.id} className="flex flex-col md:items-end">
+                  <span className="font-bold text-white">{contact.name}</span>
+                  <span className="flex items-center gap-1.5 text-emerald-400 font-mono text-xs mt-0.5">
+                    <Phone className="w-3.5 h-3.5" />
+                    {contact.phone.startsWith('91') && contact.phone.length === 12 ? `+91 ${contact.phone.substring(2)}` : contact.phone}
+                  </span>
+                </div>
+              ))}
             </div>
             <div className="pt-2 border-t border-white/5">
               <p className="text-[11px] font-display font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-indigo-300 tracking-wider">
@@ -895,90 +1074,53 @@ export default function App() {
 
       {/* Floating Animating WhatsApp Buttons Stack */}
       <div className="fixed bottom-6 right-6 z-50 flex flex-col gap-4 items-end">
-        {/* Aminul Islam Chowdhury WhatsApp Button */}
-        <motion.a
-          href="https://wa.me/919883177907?text=Hello%20Aminul%20Islam%20Chowdhury,%20I'm%20inquiring%20about%20the%20Andharia%20Premier%20League."
-          target="_blank"
-          rel="noopener noreferrer"
-          id="whatsapp-aminul-floating-btn"
-          className="relative flex items-center justify-center w-14 h-14 bg-emerald-500 hover:bg-emerald-400 text-white rounded-full shadow-[0_0_20px_rgba(16,185,129,0.6)] hover:shadow-[0_0_30px_rgba(16,185,129,0.9)] transition-all duration-300 group cursor-pointer"
-          initial={{ scale: 0, opacity: 0 }}
-          animate={{ 
-            scale: [1, 1.06, 1],
-            opacity: 1
-          }}
-          transition={{
-            scale: {
-              repeat: Infinity,
-              duration: 2.5,
-              ease: "easeInOut",
-              delay: 0.5 // Staggered delay for alternating pulse
-            },
-            opacity: { duration: 0.5 }
-          }}
-          whileHover={{ scale: 1.12 }}
-          whileTap={{ scale: 0.93 }}
-        >
-          {/* Pulsing Outer Rings */}
-          <span className="absolute inset-0 rounded-full bg-emerald-500/40 animate-ping opacity-75" style={{ animationDuration: '2.2s' }} />
-          <span className="absolute -inset-1 rounded-full border border-emerald-500/20 animate-pulse" />
+        {whatsAppContacts.filter(c => c.visible).map((contact, index) => {
+          const encodedText = encodeURIComponent(contact.message);
+          return (
+            <motion.a
+              key={contact.id}
+              href={`https://wa.me/${contact.phone}?text=${encodedText}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              id={`whatsapp-floating-btn-${contact.id}`}
+              className="relative flex items-center justify-center w-14 h-14 bg-emerald-500 hover:bg-emerald-400 text-white rounded-full shadow-[0_0_20px_rgba(16,185,129,0.6)] hover:shadow-[0_0_30px_rgba(16,185,129,0.9)] transition-all duration-300 group cursor-pointer"
+              initial={{ scale: 0, opacity: 0 }}
+              animate={{ 
+                scale: [1, 1.06, 1],
+                opacity: 1
+              }}
+              transition={{
+                scale: {
+                  repeat: Infinity,
+                  duration: 2.5,
+                  ease: "easeInOut",
+                  delay: index * 0.5 // Staggered delay for alternating pulse
+                },
+                opacity: { duration: 0.5 }
+              }}
+              whileHover={{ scale: 1.12 }}
+              whileTap={{ scale: 0.93 }}
+            >
+              {/* Pulsing Outer Rings */}
+              <span className="absolute inset-0 rounded-full bg-emerald-500/40 animate-ping opacity-75" style={{ animationDuration: `${2 + index * 0.2}s` }} />
+              <span className="absolute -inset-1 rounded-full border border-emerald-500/20 animate-pulse" />
 
-          {/* WhatsApp SVG Icon */}
-          <svg
-            className="w-7 h-7 fill-current relative z-10 drop-shadow-md"
-            viewBox="0 0 16 16"
-            xmlns="http://www.w3.org/2000/svg"
-          >
-            <path d="M13.601 2.326A7.85 7.85 0 0 0 7.994 0C3.627 0 .068 3.558.064 7.926c0 1.399.366 2.76 1.057 3.965L0 16l4.204-1.102a7.9 7.9 0 0 0 3.79.965h.004c4.368 0 7.926-3.558 7.93-7.93A7.9 7.9 0 0 0 13.6 2.326zM7.994 14.521a6.6 6.6 0 0 1-3.356-.92l-.24-.144-2.494.654.666-2.433-.156-.251a6.56 6.56 0 0 1-1.007-3.505c0-3.626 2.957-6.584 6.591-6.584a6.56 6.56 0 0 1 4.66 1.931 6.56 6.56 0 0 1 1.928 4.66c-.004 3.639-2.961 6.592-6.592 6.592m3.618-4.993c-.198-.099-1.17-.578-1.353-.646-.182-.065-.315-.099-.445.099-.133.197-.513.646-.627.775-.114.133-.232.148-.43.05-.197-.1-.836-.308-1.592-.985-.59-.525-.985-1.175-1.103-1.372-.114-.198-.011-.304.088-.403.087-.088.197-.232.296-.346.1-.114.133-.198.198-.33.065-.134.034-.248-.015-.347-.05-.099-.445-1.076-.612-1.47-.16-.389-.323-.335-.445-.34-.114-.007-.247-.007-.38-.007a.73.73 0 0 0-.529.247c-.182.198-.691.677-.691 1.654s.71 1.916.81 2.049c.098.133 1.394 2.132 3.383 2.992.47.205.84.326 1.129.418.475.152.904.129 1.246.08.38-.058 1.171-.48 1.338-.943.164-.464.164-.86.114-.943-.049-.084-.182-.133-.38-.232"/>
-          </svg>
+              {/* WhatsApp SVG Icon */}
+              <svg
+                className="w-7 h-7 fill-current relative z-10 drop-shadow-md"
+                viewBox="0 0 16 16"
+                xmlns="http://www.w3.org/2000/svg"
+              >
+                <path d="M13.601 2.326A7.85 7.85 0 0 0 7.994 0C3.627 0 .068 3.558.064 7.926c0 1.399.366 2.76 1.057 3.965L0 16l4.204-1.102a7.9 7.9 0 0 0 3.79.965h.004c4.368 0 7.926-3.558 7.93-7.93A7.9 7.9 0 0 0 13.6 2.326zM7.994 14.521a6.6 6.6 0 0 1-3.356-.92l-.24-.144-2.494.654.666-2.433-.156-.251a6.56 6.56 0 0 1-1.007-3.505c0-3.626 2.957-6.584 6.591-6.584a6.56 6.56 0 0 1 4.66 1.931 6.56 6.56 0 0 1 1.928 4.66c-.004 3.639-2.961 6.592-6.592 6.592m3.618-4.993c-.198-.099-1.17-.578-1.353-.646-.182-.065-.315-.099-.445.099-.133.197-.513.646-.627.775-.114.133-.232.148-.43.05-.197-.1-.836-.308-1.592-.985-.59-.525-.985-1.175-1.103-1.372-.114-.198-.011-.304.088-.403.087-.088.197-.232.296-.346.1-.114.133-.198.198-.33.065-.134.034-.248-.015-.347-.05-.099-.445-1.076-.612-1.47-.16-.389-.323-.335-.445-.34-.114-.007-.247-.007-.38-.007a.73.73 0 0 0-.529.247c-.182.198-.691.677-.691 1.654s.71 1.916.81 2.049c.098.133 1.394 2.132 3.383 2.992.47.205.84.326 1.129.418.475.152.904.129 1.246.08.38-.058 1.171-.48 1.338-.943.164-.464.164-.86.114-.943-.049-.084-.182-.133-.38-.232"/>
+              </svg>
 
-          {/* Hover Tooltip */}
-          <span className="absolute right-16 scale-0 group-hover:scale-100 transition-all duration-200 origin-right bg-slate-900 border border-emerald-500/20 text-emerald-300 font-sans text-xs py-1.5 px-3 rounded-xl whitespace-nowrap shadow-xl font-bold">
-            💬 Contact Aminul Islam Chowdhury (+91 9883177907)
-          </span>
-        </motion.a>
-
-        {/* MD Aziz WhatsApp Button */}
-        <motion.a
-          href="https://wa.me/919593874231?text=Hello%20MD%20Aziz,%20I'm%20inquiring%20about%20the%20Andharia%20Premier%20League."
-          target="_blank"
-          rel="noopener noreferrer"
-          id="whatsapp-floating-btn"
-          className="relative flex items-center justify-center w-14 h-14 bg-emerald-500 hover:bg-emerald-400 text-white rounded-full shadow-[0_0_20px_rgba(16,185,129,0.6)] hover:shadow-[0_0_30px_rgba(16,185,129,0.9)] transition-all duration-300 group cursor-pointer"
-          initial={{ scale: 0, opacity: 0 }}
-          animate={{ 
-            scale: [1, 1.06, 1],
-            opacity: 1
-          }}
-          transition={{
-            scale: {
-              repeat: Infinity,
-              duration: 2.5,
-              ease: "easeInOut"
-            },
-            opacity: { duration: 0.5 }
-          }}
-          whileHover={{ scale: 1.12 }}
-          whileTap={{ scale: 0.93 }}
-        >
-          {/* Pulsing Outer Rings */}
-          <span className="absolute inset-0 rounded-full bg-emerald-500/40 animate-ping opacity-75" style={{ animationDuration: '2s' }} />
-          <span className="absolute -inset-1 rounded-full border border-emerald-500/20 animate-pulse" />
-
-          {/* WhatsApp SVG Icon */}
-          <svg
-            className="w-7 h-7 fill-current relative z-10 drop-shadow-md"
-            viewBox="0 0 16 16"
-            xmlns="http://www.w3.org/2000/svg"
-          >
-            <path d="M13.601 2.326A7.85 7.85 0 0 0 7.994 0C3.627 0 .068 3.558.064 7.926c0 1.399.366 2.76 1.057 3.965L0 16l4.204-1.102a7.9 7.9 0 0 0 3.79.965h.004c4.368 0 7.926-3.558 7.93-7.93A7.9 7.9 0 0 0 13.6 2.326zM7.994 14.521a6.6 6.6 0 0 1-3.356-.92l-.24-.144-2.494.654.666-2.433-.156-.251a6.56 6.56 0 0 1-1.007-3.505c0-3.626 2.957-6.584 6.591-6.584a6.56 6.56 0 0 1 4.66 1.931 6.56 6.56 0 0 1 1.928 4.66c-.004 3.639-2.961 6.592-6.592 6.592m3.618-4.993c-.198-.099-1.17-.578-1.353-.646-.182-.065-.315-.099-.445.099-.133.197-.513.646-.627.775-.114.133-.232.148-.43.05-.197-.1-.836-.308-1.592-.985-.59-.525-.985-1.175-1.103-1.372-.114-.198-.011-.304.088-.403.087-.088.197-.232.296-.346.1-.114.133-.198.198-.33.065-.134.034-.248-.015-.347-.05-.099-.445-1.076-.612-1.47-.16-.389-.323-.335-.445-.34-.114-.007-.247-.007-.38-.007a.73.73 0 0 0-.529.247c-.182.198-.691.677-.691 1.654s.71 1.916.81 2.049c.098.133 1.394 2.132 3.383 2.992.47.205.84.326 1.129.418.475.152.904.129 1.246.08.38-.058 1.171-.48 1.338-.943.164-.464.164-.86.114-.943-.049-.084-.182-.133-.38-.232"/>
-          </svg>
-
-          {/* Hover Tooltip */}
-          <span className="absolute right-16 scale-0 group-hover:scale-100 transition-all duration-200 origin-right bg-slate-900 border border-emerald-500/20 text-emerald-300 font-sans text-xs py-1.5 px-3 rounded-xl whitespace-nowrap shadow-xl font-bold">
-            💬 Contact MD Aziz (+91 9593874231)
-          </span>
-        </motion.a>
+              {/* Hover Tooltip */}
+              <span className="absolute right-16 scale-0 group-hover:scale-100 transition-all duration-200 origin-right bg-slate-900 border border-emerald-500/20 text-emerald-300 font-sans text-xs py-1.5 px-3 rounded-xl whitespace-nowrap shadow-xl font-bold">
+                💬 Contact {contact.name} ({contact.phone.startsWith('91') && contact.phone.length === 12 ? `+91 ${contact.phone.substring(2)}` : contact.phone})
+              </span>
+            </motion.a>
+          );
+        })}
       </div>
 
       {/* Admin Login Modal */}
@@ -1106,6 +1248,15 @@ export default function App() {
           </div>
         )}
       </AnimatePresence>
+
+      {/* User Login & Signup Modal */}
+      <UserAuthModal
+        isOpen={isAuthModalOpen}
+        onClose={() => setIsAuthModalOpen(false)}
+        onLogin={handleLoginUser}
+        registeredUsers={registeredUsers}
+        onRegisterUser={handleRegisterUser}
+      />
     </div>
   );
 }

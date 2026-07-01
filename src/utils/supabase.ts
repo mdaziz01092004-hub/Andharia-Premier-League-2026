@@ -1,6 +1,6 @@
 /// <reference types="vite/client" />
 import { createClient } from '@supabase/supabase-js';
-import { Team, PlayerRegistration, Poll, Rule } from '../types';
+import { Team, PlayerRegistration, Poll, Rule, AppUser, WhatsAppContact } from '../types';
 
 // Read variables from import.meta.env
 const supabaseUrl = (import.meta.env.NEXT_PUBLIC_SUPABASE_URL || import.meta.env.VITE_SUPABASE_URL || '').trim();
@@ -221,6 +221,52 @@ export async function saveAdminPasswordDb(password: string): Promise<void> {
   if (error) throw error;
 }
 
+// User Accounts Database Operations
+export async function fetchUsersDb(): Promise<AppUser[]> {
+  if (!supabase) throw new Error('Supabase client not initialized');
+  const { data, error } = await supabase.from('apl_users').select('*');
+  if (error) throw error;
+  return (data || []).map((row: any) => ({
+    fullName: row.full_name,
+    mobileNumber: row.mobile_number
+  }));
+}
+
+export async function saveUserDb(user: AppUser): Promise<void> {
+  if (!supabase) return;
+  const { error } = await supabase.from('apl_users').upsert({
+    mobile_number: user.mobileNumber.trim(),
+    full_name: user.fullName.trim(),
+    created_at: new Date().toISOString()
+  });
+  if (error) throw error;
+}
+
+// WhatsApp Contacts Database Operations
+export async function fetchWhatsAppContactsDb(): Promise<WhatsAppContact[] | null> {
+  if (!supabase) throw new Error('Supabase client not initialized');
+  const { data, error } = await supabase.from('apl_settings').select('value').eq('key', 'whatsapp_contacts');
+  if (error) throw error;
+  if (data && data.length > 0) {
+    try {
+      return JSON.parse(data[0].value) as WhatsAppContact[];
+    } catch (e) {
+      console.error('Failed to parse WhatsApp contacts JSON:', e);
+      return null;
+    }
+  }
+  return null;
+}
+
+export async function saveWhatsAppContactsDb(contacts: WhatsAppContact[]): Promise<void> {
+  if (!supabase) return;
+  const { error } = await supabase.from('apl_settings').upsert({
+    key: 'whatsapp_contacts',
+    value: JSON.stringify(contacts)
+  });
+  if (error) throw error;
+}
+
 // SQL Script to copy-paste into Supabase Dashboard
 export const SUPABASE_SQL_SCRIPT = `-- SQL script to set up Andharia Premier League 2026 database tables
 -- Run this in your Supabase SQL Editor (https://supabase.com/dashboard)
@@ -284,6 +330,13 @@ CREATE TABLE IF NOT EXISTS public.apl_settings (
     value TEXT NOT NULL
 );
 
+-- Create Users table
+CREATE TABLE IF NOT EXISTS public.apl_users (
+    mobile_number TEXT PRIMARY KEY,
+    full_name TEXT NOT NULL,
+    created_at TEXT NOT NULL
+);
+
 -- Enable Row Level Security (RLS) for public read and insert/update access
 ALTER TABLE public.apl_teams ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.apl_players ENABLE ROW LEVEL SECURITY;
@@ -291,6 +344,7 @@ ALTER TABLE public.apl_polls ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.apl_rules ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.apl_admins ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.apl_settings ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.apl_users ENABLE ROW LEVEL SECURITY;
 
 -- Create simple policies allowing anyone to view and modify
 CREATE POLICY "Allow public read of teams" ON public.apl_teams FOR SELECT USING (true);
@@ -322,4 +376,9 @@ CREATE POLICY "Allow public read of settings" ON public.apl_settings FOR SELECT 
 CREATE POLICY "Allow public insert of settings" ON public.apl_settings FOR INSERT WITH CHECK (true);
 CREATE POLICY "Allow public update of settings" ON public.apl_settings FOR UPDATE USING (true);
 CREATE POLICY "Allow public delete of settings" ON public.apl_settings FOR DELETE USING (true);
+
+CREATE POLICY "Allow public read of users" ON public.apl_users FOR SELECT USING (true);
+CREATE POLICY "Allow public insert of users" ON public.apl_users FOR INSERT WITH CHECK (true);
+CREATE POLICY "Allow public update of users" ON public.apl_users FOR UPDATE USING (true);
+CREATE POLICY "Allow public delete of users" ON public.apl_users FOR DELETE USING (true);
 `;
