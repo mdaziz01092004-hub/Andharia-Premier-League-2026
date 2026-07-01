@@ -15,7 +15,7 @@ interface AudioPlayerProps {
 }
 
 export default function AudioPlayer({ visibility, isAdminMode = false }: AudioPlayerProps) {
-  const [isPlaying, setIsPlaying] = useState(false);
+  const [isPlaying, setIsPlaying] = useState(true);
   const [volume, setVolume] = useState(0.4);
   const [activeTrack, setActiveTrack] = useState<'theme' | 'stadium' | 'beats' | 'uploaded'>('theme');
   const [showVideo, setShowVideo] = useState(false);
@@ -105,11 +105,29 @@ export default function AudioPlayer({ visibility, isAdminMode = false }: AudioPl
   // Handle playing background music upon first user interaction if autoplay was blocked by the browser
   useEffect(() => {
     const handleInteraction = () => {
-      if (isPlaying && activeTrack === 'uploaded' && customAudioRef.current) {
-        if (customAudioRef.current.paused) {
-          customAudioRef.current.play().catch((err) => {
-            console.warn('Interaction play still blocked:', err);
-          });
+      // Resume Web Audio context if initialized and suspended
+      if (audioContextRef.current && audioContextRef.current.state === 'suspended') {
+        audioContextRef.current.resume().catch(() => {});
+      }
+
+      if (isPlaying) {
+        if (activeTrack === 'uploaded' && customAudioRef.current) {
+          if (customAudioRef.current.paused) {
+            customAudioRef.current.play().catch((err) => {
+              console.warn('Interaction play still blocked:', err);
+            });
+          }
+        } else if (activeTrack === 'theme' && ytPlayerRef.current && ytReady) {
+          try {
+            const state = ytPlayerRef.current.getPlayerState?.();
+            if (state !== 1) { // 1 is YT.PlayerState.PLAYING
+              ytPlayerRef.current.playVideo();
+            }
+          } catch (err) {
+            console.warn('YouTube play still blocked on interaction:', err);
+          }
+        } else if (activeTrack === 'stadium' || activeTrack === 'beats') {
+          updatePlayback();
         }
       }
     };
@@ -123,7 +141,7 @@ export default function AudioPlayer({ visibility, isAdminMode = false }: AudioPl
       window.removeEventListener('touchstart', handleInteraction);
       window.removeEventListener('keydown', handleInteraction);
     };
-  }, [isPlaying, activeTrack]);
+  }, [isPlaying, activeTrack, ytReady]);
 
   // Initialize Web Audio Context
   const initAudio = () => {
@@ -470,19 +488,10 @@ export default function AudioPlayer({ visibility, isAdminMode = false }: AudioPl
     setIsPlaying(!isPlaying);
   };
 
-  if (!isAdminMode && (!visibility || visibility.bgMusicPlayer === false)) {
-    return (
-      <audio 
-        ref={customAudioRef} 
-        src={uploadedUrl || undefined} 
-        loop 
-        preload="auto"
-      />
-    );
-  }
+  const isHidden = !isAdminMode && (!visibility || visibility.bgMusicPlayer === false);
 
   return (
-    <div className="glass-panel p-4 rounded-3xl flex flex-col gap-4 max-w-2xl mx-auto mb-8 relative overflow-hidden transition-all duration-300 border border-white/10 shadow-2xl">
+    <div className={isHidden ? "hidden" : "glass-panel p-4 rounded-3xl flex flex-col gap-4 max-w-2xl mx-auto mb-8 relative overflow-hidden transition-all duration-300 border border-white/10 shadow-2xl"}>
       {/* Decorative Light Glows */}
       <div className={`absolute -top-10 -right-10 w-24 h-24 rounded-full blur-2xl transition-colors duration-500 ${
         activeTrack === 'theme' ? 'bg-red-500/20' : 'bg-blue-500/20'

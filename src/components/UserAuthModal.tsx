@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { X, User, Phone, LogIn, UserPlus, ShieldAlert, CheckCircle2 } from 'lucide-react';
 import { AppUser } from '../types';
@@ -14,6 +14,7 @@ interface UserAuthModalProps {
   onLogin: (user: AppUser) => void;
   registeredUsers: AppUser[];
   onRegisterUser: (user: AppUser) => Promise<void>;
+  isMandatory?: boolean;
 }
 
 export default function UserAuthModal({
@@ -21,9 +22,17 @@ export default function UserAuthModal({
   onClose,
   onLogin,
   registeredUsers,
-  onRegisterUser
+  onRegisterUser,
+  isMandatory = false
 }: UserAuthModalProps) {
-  const [activeTab, setActiveTab] = useState<'login' | 'signup'>('login');
+  const [activeTab, setActiveTab] = useState<'login' | 'signup'>(isMandatory ? 'signup' : 'login');
+  
+  // Set default activeTab to 'signup' if triggered as mandatory
+  useEffect(() => {
+    if (isOpen && isMandatory) {
+      setActiveTab('signup');
+    }
+  }, [isOpen, isMandatory]);
   
   // Login State
   const [loginPhone, setLoginPhone] = useState('');
@@ -115,7 +124,7 @@ export default function UserAuthModal({
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
-          onClick={onClose}
+          onClick={isMandatory ? undefined : onClose}
           className="absolute inset-0 bg-slate-950/85 backdrop-blur-md"
         />
 
@@ -131,19 +140,27 @@ export default function UserAuthModal({
           <div className="absolute -bottom-16 -right-16 w-32 h-32 bg-blue-600/10 rounded-full blur-3xl pointer-events-none" />
 
           {/* Close button */}
-          <button
-            onClick={onClose}
-            className="absolute top-4 right-4 p-1.5 rounded-lg bg-white/5 border border-white/10 text-slate-400 hover:text-white transition-all cursor-pointer"
-          >
-            <X className="w-4 h-4" />
-          </button>
+          {!isMandatory && (
+            <button
+              onClick={onClose}
+              className="absolute top-4 right-4 p-1.5 rounded-lg bg-white/5 border border-white/10 text-slate-400 hover:text-white transition-all cursor-pointer"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          )}
 
           <div className="text-center mb-6">
             <h3 className="text-xl font-display font-black text-white uppercase tracking-wider">
               APL <span className="text-blue-400">2026</span> Portal
             </h3>
-            <p className="text-xs text-slate-400 mt-1 font-sans">
-              Access the popularity poll and player registrations
+            <p className="text-xs text-slate-400 mt-1.5 font-sans leading-relaxed">
+              {isMandatory ? (
+                <span className="inline-block px-3 py-1 bg-amber-500/10 border border-amber-500/20 text-amber-300 rounded-xl text-[11px] font-semibold">
+                  🔐 Mandatory Registration is required to access the tournament portal
+                </span>
+              ) : (
+                "Access the popularity poll and player registrations"
+              )}
             </p>
           </div>
 

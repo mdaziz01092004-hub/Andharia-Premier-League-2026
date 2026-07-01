@@ -76,8 +76,8 @@ export default function RegistrationForm({
   // Roster Management
   const addRosterPlayer = () => {
     if (!playerInput.trim()) return;
-    if (teamRoster.length >= 10) {
-      setTeamError('Strict local cap: maximum of 10 players allowed per village team.');
+    if (teamRoster.length >= 9) {
+      setTeamError('Strict village roster cap: maximum of 9 additional players allowed (Total 11 players including Captain and Icon).');
       return;
     }
     setTeamRoster([...teamRoster, playerInput.trim()]);
@@ -107,9 +107,9 @@ export default function RegistrationForm({
 
     // Rules verification
     // 1 icon player checked (it's a text input, must be designated)
-    // 10 players max check
-    if (teamRoster.length > 10) {
-      setTeamError('Rule violation: Max 10 players permitted from one village.');
+    // 9 players max check
+    if (teamRoster.length > 9) {
+      setTeamError('Rule violation: Max 9 additional players permitted from one village (Total 11 including Captain & Icon).');
       return;
     }
 
@@ -288,7 +288,7 @@ export default function RegistrationForm({
               <label className="block text-xs font-semibold text-white mb-2 font-display flex justify-between items-center">
                 <span>Village Roster (Captain and Icon automatically included)</span>
                 <span className="text-[10px] text-blue-400 font-mono">
-                  {teamRoster.length}/10 players
+                  {teamRoster.length}/9 players (Total 11 players)
                 </span>
               </label>
 

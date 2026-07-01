@@ -226,19 +226,59 @@ export async function fetchUsersDb(): Promise<AppUser[]> {
   if (!supabase) throw new Error('Supabase client not initialized');
   const { data, error } = await supabase.from('apl_users').select('*');
   if (error) throw error;
-  return (data || []).map((row: any) => ({
-    fullName: row.full_name,
-    mobileNumber: row.mobile_number
-  }));
+  return (data || []).map((row: any) => {
+    let parsedActivities: any[] = [];
+    if (row.activities) {
+      try {
+        parsedActivities = typeof row.activities === 'string' ? JSON.parse(row.activities) : row.activities;
+      } catch (e) {
+        console.warn('Failed to parse user activities:', e);
+      }
+    }
+    return {
+      fullName: row.full_name,
+      mobileNumber: row.mobile_number,
+      registeredAt: row.created_at,
+      lastLoginAt: row.last_login_at || null,
+      lastLogoutAt: row.last_logout_at || null,
+      loginCount: row.login_count || 0,
+      logoutCount: row.logout_count || 0,
+      activities: Array.isArray(parsedActivities) ? parsedActivities : []
+    };
+  });
 }
 
 export async function saveUserDb(user: AppUser): Promise<void> {
   if (!supabase) return;
-  const { error } = await supabase.from('apl_users').upsert({
+  
+  const fullPayload = {
     mobile_number: user.mobileNumber.trim(),
     full_name: user.fullName.trim(),
-    created_at: new Date().toISOString()
-  });
+    created_at: user.registeredAt || new Date().toISOString(),
+    last_login_at: user.lastLoginAt || null,
+    last_logout_at: user.lastLogoutAt || null,
+    login_count: user.loginCount || 0,
+    logout_count: user.logoutCount || 0,
+    activities: JSON.stringify(user.activities || [])
+  };
+
+  const { error } = await supabase.from('apl_users').upsert(fullPayload);
+  
+  if (error) {
+    console.warn('Upserting full user failed (likely missing columns). Retrying with base columns...', error);
+    const basePayload = {
+      mobile_number: user.mobileNumber.trim(),
+      full_name: user.fullName.trim(),
+      created_at: user.registeredAt || new Date().toISOString()
+    };
+    const { error: retryError } = await supabase.from('apl_users').upsert(basePayload);
+    if (retryError) throw retryError;
+  }
+}
+
+export async function deleteUserDb(mobileNumber: string): Promise<void> {
+  if (!supabase) return;
+  const { error } = await supabase.from('apl_users').delete().eq('mobile_number', mobileNumber.trim());
   if (error) throw error;
 }
 
@@ -334,8 +374,20 @@ CREATE TABLE IF NOT EXISTS public.apl_settings (
 CREATE TABLE IF NOT EXISTS public.apl_users (
     mobile_number TEXT PRIMARY KEY,
     full_name TEXT NOT NULL,
-    created_at TEXT NOT NULL
+    created_at TEXT NOT NULL,
+    last_login_at TEXT,
+    last_logout_at TEXT,
+    login_count INTEGER DEFAULT 0,
+    logout_count INTEGER DEFAULT 0,
+    activities TEXT -- JSON string representation
 );
+
+-- Upgrade existing users table if it was created earlier without login tracking columns
+ALTER TABLE public.apl_users ADD COLUMN IF NOT EXISTS last_login_at TEXT;
+ALTER TABLE public.apl_users ADD COLUMN IF NOT EXISTS last_logout_at TEXT;
+ALTER TABLE public.apl_users ADD COLUMN IF NOT EXISTS login_count INTEGER DEFAULT 0;
+ALTER TABLE public.apl_users ADD COLUMN IF NOT EXISTS logout_count INTEGER DEFAULT 0;
+ALTER TABLE public.apl_users ADD COLUMN IF NOT EXISTS activities TEXT;
 
 -- Enable Row Level Security (RLS) for public read and insert/update access
 ALTER TABLE public.apl_teams ENABLE ROW LEVEL SECURITY;

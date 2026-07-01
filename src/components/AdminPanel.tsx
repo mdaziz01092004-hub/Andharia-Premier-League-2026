@@ -4,10 +4,11 @@
  */
 
 import React, { useState, useEffect, useRef } from 'react';
-import { Team, PlayerRegistration, Poll, VisibilityConfig, Rule, WhatsAppContact } from '../types';
+import { Team, PlayerRegistration, Poll, VisibilityConfig, Rule, WhatsAppContact, AppUser } from '../types';
 import { 
   Shield, Settings, Trash2, Edit2, Plus, CheckCircle2, XCircle, Users, Award, Vote, IndianRupee, Save, Undo, Eye, EyeOff, Music, Upload, Trash, Play, Pause, ShieldAlert, Database, Copy, AlertTriangle,
-  ClipboardList, Check, X, Phone, MapPin, Calendar, HelpCircle, MessageSquare
+  ClipboardList, Check, X, Phone, MapPin, Calendar, HelpCircle, MessageSquare, UserPlus, UserCheck, Key,
+  Activity, Clock, LogIn, LogOut, BarChart3
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { getCustomAudio, saveCustomAudio, deleteCustomAudio } from '../utils/audioDb';
@@ -31,6 +32,9 @@ interface AdminPanelProps {
   onAddSubAdmin: (email: string) => void;
   onRemoveSubAdmin: (email: string) => void;
   onUpdatePassword: (password: string) => void;
+  registeredUsers: AppUser[];
+  onDeleteUser: (mobileNumber: string) => Promise<void>;
+  onUpdateUser: (oldMobile: string, user: AppUser) => Promise<void>;
   onLogout: () => void;
 }
 
@@ -52,9 +56,22 @@ export default function AdminPanel({
   onAddSubAdmin,
   onRemoveSubAdmin,
   onUpdatePassword,
+  registeredUsers = [],
+  onDeleteUser,
+  onUpdateUser,
   onLogout
 }: AdminPanelProps) {
-  const [activeSubTab, setActiveSubTab] = useState<'teams' | 'submissions' | 'players' | 'polls' | 'visibility' | 'music' | 'rules' | 'security' | 'whatsapp'>('teams');
+  const [activeSubTab, setActiveSubTab] = useState<'teams' | 'submissions' | 'players' | 'polls' | 'visibility' | 'music' | 'rules' | 'security' | 'whatsapp' | 'users'>('teams');
+  
+  // Edit / Add States for Users
+  const [editingUserPhone, setEditingUserPhone] = useState<string | null>(null);
+  const [isAddingUser, setIsAddingUser] = useState(false);
+  const [selectedUserForLogs, setSelectedUserForLogs] = useState<string | null>(null);
+  const [userForm, setUserForm] = useState<Partial<AppUser>>({
+    fullName: '',
+    mobileNumber: ''
+  });
+  const [userSearch, setUserSearch] = useState('');
   const [newSubAdminEmail, setNewSubAdminEmail] = useState('');
   const [newPasswordInput, setNewPasswordInput] = useState('');
   const [passwordUpdateStatus, setPasswordUpdateStatus] = useState<string | null>(null);
@@ -157,6 +174,22 @@ export default function AdminPanel({
   const showNotification = (text: string, type: 'success' | 'error' = 'success') => {
     setNotification({ text, type });
     setTimeout(() => setNotification(null), 4000);
+  };
+
+  const formatDateTime = (isoString?: string) => {
+    if (!isoString) return 'Never';
+    try {
+      const d = new Date(isoString);
+      return d.toLocaleString('en-US', {
+        month: 'short',
+        day: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit',
+        hour12: true
+      });
+    } catch (e) {
+      return isoString;
+    }
   };
 
   // Edit / Add States for Rules
@@ -271,8 +304,8 @@ export default function AdminPanel({
   const handleAddPlayerToRoster = () => {
     if (!tempPlayerName.trim()) return;
     const currentRoster = teamForm.players || [];
-    if (currentRoster.length >= 10) {
-      showNotification('Roster rule: Maximum of 10 village players are permitted.', 'error');
+    if (currentRoster.length >= 11) {
+      showNotification('Roster rule: Maximum of 11 total players (Captain, Icon, and 9 village players) are permitted.', 'error');
       return;
     }
     setTeamForm({
@@ -799,6 +832,18 @@ export default function AdminPanel({
           WhatsApp Customizer ({whatsAppContacts.length})
         </button>
 
+        <button
+          onClick={() => { setActiveSubTab('users'); }}
+          className={`px-4 py-2 text-xs font-display font-bold rounded-lg transition-all flex items-center gap-2 ${
+            activeSubTab === 'users'
+              ? 'bg-sky-500/20 text-sky-300 border border-sky-500/20'
+              : 'text-slate-400 hover:text-white hover:bg-white/5'
+          }`}
+        >
+          <UserCheck className="w-4 h-4 text-sky-400" />
+          Users & Login Manager ({registeredUsers.length})
+        </button>
+
         {adminEmail?.toLowerCase() === 'mdaziz01092004@gmail.com' && (
           <button
             onClick={() => { setActiveSubTab('security'); }}
@@ -924,7 +969,7 @@ export default function AdminPanel({
             {/* Live roster builder in editor */}
             <div className="bg-slate-900/50 p-4 rounded-xl border border-white/5">
               <label className="block text-[10px] uppercase font-bold text-slate-300 mb-1">
-                Edit Village Players Roster ({teamForm.players?.length || 0}/10 players max)
+                Edit Village Players Roster ({teamForm.players?.length || 0}/11 players max - Captain & Icon included)
               </label>
               
               <div className="flex gap-2 mb-3">
@@ -1343,7 +1388,7 @@ export default function AdminPanel({
                     </td>
                     <td className="p-3">{team.village}</td>
                     <td className="p-3 font-medium text-blue-300">{team.iconPlayer}</td>
-                    <td className="p-3 font-mono">{team.players?.length || 0} / 10 players</td>
+                    <td className="p-3 font-mono">{team.players?.length || 0} / 11 players</td>
                     <td className="p-3 text-right">
                       <div className="inline-flex gap-1.5">
                         <button
@@ -2373,6 +2418,437 @@ export default function AdminPanel({
             )}
           </div>
         </div>
+      ) : activeSubTab === 'users' ? (
+        <div className="border border-white/5 rounded-2xl bg-slate-950/20 p-6 space-y-6">
+          <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-4 border-b border-white/5">
+            <div>
+              <h3 className="text-base font-display font-bold text-white flex items-center gap-2">
+                <Users className="w-5 h-5 text-sky-400 animate-pulse" />
+                User Accounts & Session Tracking Manager
+              </h3>
+              <p className="text-xs text-slate-400 mt-1">
+                Monitor and manage registered user credentials, login/logout session frequencies, and security activity histories.
+              </p>
+            </div>
+            {!isAddingUser && !editingUserPhone && (
+              <button
+                onClick={() => {
+                  setIsAddingUser(true);
+                  setUserForm({ fullName: '', mobileNumber: '' });
+                }}
+                className="px-3.5 py-1.5 text-xs font-semibold bg-sky-500/10 hover:bg-sky-500/20 text-sky-300 border border-sky-500/20 rounded-xl transition-all flex items-center gap-1.5 cursor-pointer"
+              >
+                <Plus className="w-3.5 h-3.5" />
+                Add User manually
+              </button>
+            )}
+          </div>
+
+          {/* User Session Analytics Grid */}
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            <div className="p-4 rounded-xl bg-gradient-to-br from-emerald-500/5 to-transparent border border-emerald-500/10 shadow-sm">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-semibold text-emerald-400 font-mono tracking-wider uppercase">Total Signups</span>
+                <UserPlus className="w-4 h-4 text-emerald-400" />
+              </div>
+              <p className="text-2xl font-bold font-mono text-white mt-2">
+                {registeredUsers.length}
+              </p>
+              <p className="text-[10px] text-slate-400 mt-1">Unique registered mobile accounts</p>
+            </div>
+
+            <div className="p-4 rounded-xl bg-gradient-to-br from-sky-500/5 to-transparent border border-sky-500/10 shadow-sm">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-semibold text-sky-400 font-mono tracking-wider uppercase">Total Logins</span>
+                <LogIn className="w-4 h-4 text-sky-400" />
+              </div>
+              <p className="text-2xl font-bold font-mono text-white mt-2">
+                {registeredUsers.reduce((sum, u) => sum + (u.loginCount || 0), 0)}
+              </p>
+              <p className="text-[10px] text-slate-400 mt-1">Successful authenticate logs</p>
+            </div>
+
+            <div className="p-4 rounded-xl bg-gradient-to-br from-rose-500/5 to-transparent border border-rose-500/10 shadow-sm">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-semibold text-rose-400 font-mono tracking-wider uppercase">Total Logouts</span>
+                <LogOut className="w-4 h-4 text-rose-400" />
+              </div>
+              <p className="text-2xl font-bold font-mono text-white mt-2">
+                {registeredUsers.reduce((sum, u) => sum + (u.logoutCount || 0), 0)}
+              </p>
+              <p className="text-[10px] text-slate-400 mt-1">Graceful session endings logged</p>
+            </div>
+          </div>
+
+          {/* User Add/Edit Forms */}
+          {(isAddingUser || editingUserPhone) && (
+            <div className="glass-panel p-5 rounded-2xl border border-white/10 bg-slate-950/30 space-y-4 max-w-xl">
+              <h4 className="text-sm font-display font-bold text-white flex items-center gap-2">
+                {isAddingUser ? <Plus className="w-4 h-4 text-sky-400" /> : <Edit2 className="w-4 h-4 text-sky-400" />}
+                {isAddingUser ? 'Register New User Manual Account' : 'Edit User Profile / Credentials'}
+              </h4>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-[10px] font-mono text-slate-400 uppercase tracking-wider mb-1">Full Name</label>
+                  <input
+                    type="text"
+                    value={userForm.fullName || ''}
+                    onChange={(e) => setUserForm({ ...userForm, fullName: e.target.value })}
+                    placeholder="e.g. John Doe"
+                    className="w-full px-3 py-2 bg-white/5 border border-white/10 rounded-xl text-xs text-white focus:outline-none focus:border-sky-500/50"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[10px] font-mono text-slate-400 uppercase tracking-wider mb-1">Mobile Number (Login Key)</label>
+                  <input
+                    type="text"
+                    value={userForm.mobileNumber || ''}
+                    onChange={(e) => setUserForm({ ...userForm, mobileNumber: e.target.value })}
+                    placeholder="e.g. 9876543210"
+                    className="w-full px-3 py-2 bg-white/5 border border-white/10 rounded-xl text-xs text-white focus:outline-none focus:border-sky-500/50"
+                  />
+                </div>
+              </div>
+              <div className="flex justify-end gap-2 pt-2">
+                <button
+                  onClick={() => {
+                    setIsAddingUser(false);
+                    setEditingUserPhone(null);
+                    setUserForm({ fullName: '', mobileNumber: '' });
+                  }}
+                  className="px-3 py-1.5 text-xs text-slate-400 hover:text-white transition-all cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={async () => {
+                    if (!userForm.fullName?.trim() || !userForm.mobileNumber?.trim()) {
+                      showNotification('Please fill in both full name and mobile number fields.', 'error');
+                      return;
+                    }
+                    try {
+                      const userToSave: AppUser = {
+                        fullName: userForm.fullName.trim(),
+                        mobileNumber: userForm.mobileNumber.trim()
+                      };
+                      if (editingUserPhone) {
+                        await onUpdateUser(editingUserPhone, userToSave);
+                        showNotification('User updated successfully!');
+                      } else {
+                        // Check if phone number already exists
+                        const exists = registeredUsers.some(u => u.mobileNumber === userToSave.mobileNumber);
+                        if (exists) {
+                          showNotification('This mobile number is already registered.', 'error');
+                          return;
+                        }
+                        await onUpdateUser(userToSave.mobileNumber, userToSave);
+                        showNotification('New user account added successfully!');
+                      }
+                      setIsAddingUser(false);
+                      setEditingUserPhone(null);
+                      setUserForm({ fullName: '', mobileNumber: '' });
+                    } catch (err: any) {
+                      showNotification(err.message || 'Error saving user', 'error');
+                    }
+                  }}
+                  className="px-4 py-1.5 text-xs font-bold bg-sky-500 text-slate-950 hover:bg-sky-400 rounded-xl transition-all shadow-md active:scale-95 cursor-pointer"
+                >
+                  {isAddingUser ? 'Register User' : 'Save Changes'}
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* Search bar & statistics */}
+          <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-4">
+            <div className="flex items-center gap-2 max-w-sm w-full bg-white/5 border border-white/10 rounded-xl px-3 py-1.5">
+              <span className="text-slate-400 text-xs">🔍</span>
+              <input
+                type="text"
+                value={userSearch}
+                onChange={(e) => setUserSearch(e.target.value)}
+                placeholder="Search users by name or phone..."
+                className="w-full bg-transparent border-none text-xs text-white focus:outline-none placeholder-slate-500"
+              />
+              {userSearch && (
+                <button onClick={() => setUserSearch('')} className="text-slate-400 hover:text-white text-xs">
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              )}
+            </div>
+            
+            <div className="flex gap-4 text-xs">
+              <div className="px-3 py-1.5 rounded-xl bg-white/[0.02] border border-white/5">
+                <span className="text-slate-400 font-mono">Total Filtered:</span>{' '}
+                <span className="text-sky-400 font-bold font-mono">
+                  {registeredUsers.filter(u => {
+                    const s = userSearch.toLowerCase();
+                    return u.fullName.toLowerCase().includes(s) || u.mobileNumber.includes(s);
+                  }).length}
+                </span>
+              </div>
+            </div>
+          </div>
+
+          {/* Users List Table */}
+          <div className="overflow-x-auto border border-white/5 rounded-xl bg-slate-950/45">
+            <table className="w-full text-left border-collapse">
+              <thead>
+                <tr className="border-b border-white/10 bg-white/[0.02] text-[10px] font-mono text-slate-400 uppercase tracking-wider">
+                  <th className="p-4">Full Name & Registered</th>
+                  <th className="p-4">Mobile Number / key</th>
+                  <th className="p-4">Sessions metrics</th>
+                  <th className="p-4">Last login time</th>
+                  <th className="p-4 text-right">Actions</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-white/5">
+                {registeredUsers.filter(u => {
+                  const s = userSearch.toLowerCase();
+                  return u.fullName.toLowerCase().includes(s) || u.mobileNumber.includes(s);
+                }).length === 0 ? (
+                  <tr>
+                    <td colSpan={5} className="p-8 text-center text-slate-500 italic text-xs">
+                      {userSearch ? 'No registered users match your search query.' : 'No users currently registered.'}
+                    </td>
+                  </tr>
+                ) : (
+                  registeredUsers
+                    .filter(u => {
+                      const s = userSearch.toLowerCase();
+                      return u.fullName.toLowerCase().includes(s) || u.mobileNumber.includes(s);
+                    })
+                    .map((user) => (
+                      <tr key={user.mobileNumber} className="hover:bg-white/[0.01] transition-all">
+                        <td className="p-4">
+                          <div className="flex items-center gap-2.5">
+                            <div className="w-8 h-8 rounded-full bg-sky-500/10 border border-sky-500/20 flex items-center justify-center text-sky-400 font-bold text-xs uppercase font-mono">
+                              {user.fullName.substring(0, 2)}
+                            </div>
+                            <div>
+                              <p className="text-xs font-semibold text-white">{user.fullName}</p>
+                              <p className="text-[9px] text-slate-400 font-mono mt-0.5">
+                                Reg: {formatDateTime(user.registeredAt)}
+                              </p>
+                            </div>
+                          </div>
+                        </td>
+                        <td className="p-4 font-mono text-xs text-sky-300">
+                          {user.mobileNumber}
+                        </td>
+                        <td className="p-4">
+                          <div className="flex flex-wrap gap-1.5 items-center">
+                            <span className="inline-flex items-center gap-0.5 px-2 py-0.5 rounded bg-emerald-500/10 border border-emerald-500/20 text-[10px] font-mono font-semibold text-emerald-300" title="Signups">
+                              S: 1
+                            </span>
+                            <span className="inline-flex items-center gap-0.5 px-2 py-0.5 rounded bg-sky-500/10 border border-sky-500/20 text-[10px] font-mono font-semibold text-sky-300" title="Total Logins">
+                              L: {user.loginCount || 0}
+                            </span>
+                            <span className="inline-flex items-center gap-0.5 px-2 py-0.5 rounded bg-rose-500/10 border border-rose-500/20 text-[10px] font-mono font-semibold text-rose-300" title="Total Logouts">
+                              O: {user.logoutCount || 0}
+                            </span>
+                          </div>
+                        </td>
+                        <td className="p-4 text-xs font-mono">
+                          {user.lastLoginAt ? (
+                            <div>
+                              <p className="text-slate-200">{formatDateTime(user.lastLoginAt)}</p>
+                              {user.lastLogoutAt && new Date(user.lastLogoutAt) > new Date(user.lastLoginAt) && (
+                                <p className="text-[10px] text-rose-400/80 mt-0.5">Logged out at {new Date(user.lastLogoutAt).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</p>
+                              )}
+                            </div>
+                          ) : (
+                            <span className="text-slate-500 italic">Never logged in</span>
+                          )}
+                        </td>
+                        <td className="p-4 text-right">
+                          <div className="flex items-center justify-end gap-1.5">
+                            <button
+                              onClick={() => setSelectedUserForLogs(user.mobileNumber)}
+                              className="p-1.5 rounded-lg bg-sky-500/10 border border-sky-500/20 text-sky-400 hover:bg-sky-500/20 transition-all cursor-pointer flex items-center gap-1"
+                              title="View Activity Logs"
+                            >
+                              <Activity className="w-3.5 h-3.5" />
+                              <span className="text-[10px] font-semibold font-sans">Logs</span>
+                            </button>
+                            <button
+                              onClick={() => {
+                                setEditingUserPhone(user.mobileNumber);
+                                setIsAddingUser(false);
+                                setUserForm({ fullName: user.fullName, mobileNumber: user.mobileNumber });
+                              }}
+                              className="p-1.5 rounded-lg bg-white/5 border border-white/10 text-slate-400 hover:text-white transition-all cursor-pointer"
+                              title="Edit User Info"
+                            >
+                              <Edit2 className="w-3.5 h-3.5" />
+                            </button>
+                            <button
+                              onClick={async () => {
+                                if (confirm(`Are you sure you want to delete user ${user.fullName}? This will block their login and remove their registrations.`)) {
+                                  try {
+                                    await onDeleteUser(user.mobileNumber);
+                                    showNotification(`Deleted user account: ${user.fullName}`);
+                                  } catch (err: any) {
+                                    showNotification(err.message || 'Error deleting user', 'error');
+                                  }
+                                }
+                              }}
+                              className="p-1.5 rounded-lg bg-rose-500/10 border border-rose-500/20 text-rose-400 hover:bg-rose-500/20 hover:text-rose-300 transition-all cursor-pointer"
+                              title="Delete User"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))
+                )}
+              </tbody>
+            </table>
+          </div>
+
+          {/* User Session History Log Detail Modal Overlay */}
+          <AnimatePresence>
+            {selectedUserForLogs && (() => {
+              const user = registeredUsers.find(u => u.mobileNumber === selectedUserForLogs);
+              if (!user) return null;
+              
+              // Backwards compatible fallback activities builder
+              let userActivities = user.activities || [];
+              if (userActivities.length === 0) {
+                const generated: any[] = [];
+                if (user.registeredAt) {
+                  generated.push({ type: 'signup', timestamp: user.registeredAt });
+                  generated.push({ type: 'login', timestamp: user.registeredAt });
+                }
+                if (user.lastLoginAt) {
+                  const alreadyHasRegLogin = user.registeredAt && Math.abs(new Date(user.lastLoginAt).getTime() - new Date(user.registeredAt).getTime()) < 10000;
+                  if (!alreadyHasRegLogin) {
+                    generated.push({ type: 'login', timestamp: user.lastLoginAt });
+                  }
+                }
+                if (user.lastLogoutAt) {
+                  generated.push({ type: 'logout', timestamp: user.lastLogoutAt });
+                }
+                userActivities = generated;
+              }
+
+              return (
+                <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm">
+                  <motion.div
+                    initial={{ opacity: 0, scale: 0.95 }}
+                    animate={{ opacity: 1, scale: 1 }}
+                    exit={{ opacity: 0, scale: 0.95 }}
+                    className="w-full max-w-lg bg-slate-900 border border-white/10 rounded-2xl p-6 shadow-2xl relative overflow-hidden"
+                  >
+                    <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-sky-400 via-blue-500 to-indigo-500"></div>
+                    
+                    <div className="flex items-center justify-between pb-4 border-b border-white/5">
+                      <div>
+                        <h4 className="text-base font-display font-bold text-white flex items-center gap-2">
+                          <Activity className="w-5 h-5 text-sky-400 animate-pulse" />
+                          User Authentication Tracker Logs
+                        </h4>
+                        <p className="text-xs text-slate-400 mt-1">
+                          Timeline activity history for <span className="text-sky-300 font-semibold">{user.fullName}</span>
+                        </p>
+                      </div>
+                      <button
+                        onClick={() => setSelectedUserForLogs(null)}
+                        className="p-1 rounded-lg hover:bg-white/5 text-slate-400 hover:text-white transition-all cursor-pointer"
+                      >
+                        <X className="w-5 h-5" />
+                      </button>
+                    </div>
+
+                    {/* Stats metrics */}
+                    <div className="grid grid-cols-3 gap-3 my-4">
+                      <div className="p-3 rounded-xl bg-emerald-500/5 border border-emerald-500/10 text-center">
+                        <span className="block text-[10px] uppercase font-mono tracking-wider text-emerald-400">Registrations</span>
+                        <span className="text-lg font-bold font-mono text-emerald-300 mt-0.5 block">1</span>
+                      </div>
+                      <div className="p-3 rounded-xl bg-sky-500/5 border border-sky-500/10 text-center">
+                        <span className="block text-[10px] uppercase font-mono tracking-wider text-sky-400">Total Logins</span>
+                        <span className="text-lg font-bold font-mono text-sky-300 mt-0.5 block">{user.loginCount || 0}</span>
+                      </div>
+                      <div className="p-3 rounded-xl bg-rose-500/5 border border-rose-500/10 text-center">
+                        <span className="block text-[10px] uppercase font-mono tracking-wider text-rose-400">Total Logouts</span>
+                        <span className="text-lg font-bold font-mono text-rose-300 mt-0.5 block">{user.logoutCount || 0}</span>
+                      </div>
+                    </div>
+
+                    {/* Activity Timeline List */}
+                    <div className="max-h-[300px] overflow-y-auto space-y-4 pr-1">
+                      {userActivities.length === 0 ? (
+                        <div className="text-center py-10 text-slate-500 text-xs italic">
+                          No session activities logged yet.
+                        </div>
+                      ) : (
+                        <div className="relative border-l border-white/5 ml-4 pl-6 space-y-4 py-2">
+                          {[...userActivities]
+                            .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())
+                            .map((act, idx) => (
+                              <div key={idx} className="relative">
+                                {/* Timeline icon tag */}
+                                <span className={`absolute -left-[33px] top-0.5 flex h-4.5 w-4.5 items-center justify-center rounded-full bg-slate-900 border ${
+                                  act.type === 'signup' 
+                                    ? 'border-emerald-500 text-emerald-400 bg-emerald-950/20' 
+                                    : act.type === 'login'
+                                    ? 'border-sky-500 text-sky-400 bg-sky-950/20'
+                                    : 'border-rose-500 text-rose-400 bg-rose-950/20'
+                                }`}>
+                                  {act.type === 'signup' ? (
+                                    <UserPlus className="w-2.5 h-2.5" />
+                                  ) : act.type === 'login' ? (
+                                    <LogIn className="w-2.5 h-2.5" />
+                                  ) : (
+                                    <LogOut className="w-2.5 h-2.5" />
+                                  )}
+                                </span>
+                                
+                                <div>
+                                  <div className="flex items-center gap-2">
+                                    <span className={`text-[9px] font-semibold uppercase font-mono px-1.5 py-0.5 rounded ${
+                                      act.type === 'signup'
+                                        ? 'bg-emerald-500/10 text-emerald-300'
+                                        : act.type === 'login'
+                                        ? 'bg-sky-500/10 text-sky-300'
+                                        : 'bg-rose-500/10 text-rose-300'
+                                    }`}>
+                                      {act.type === 'signup' ? 'Signup Successful' : act.type === 'login' ? 'User Login Session' : 'User Logout Session'}
+                                    </span>
+                                    <span className="text-[10px] text-slate-500 font-mono">
+                                      {new Date(act.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+                                    </span>
+                                  </div>
+                                  <p className="text-xs text-slate-300 mt-1">
+                                    User performed {act.type === 'signup' ? 'first-time account signup' : act.type === 'login' ? 'dashboard portal login' : 'manual logout / session signout'} using mobile credential security key.
+                                  </p>
+                                  <p className="text-[9px] text-slate-500 font-mono mt-0.5">
+                                    Timestamp: {new Date(act.timestamp).toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' })} at {new Date(act.timestamp).toLocaleTimeString()}
+                                  </p>
+                                </div>
+                              </div>
+                            ))}
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="mt-6 pt-4 border-t border-white/5 flex justify-between items-center">
+                      <span className="text-[10px] text-slate-500 font-mono">Device: Mobile Client Web Session</span>
+                      <button
+                        onClick={() => setSelectedUserForLogs(null)}
+                        className="px-4 py-2 text-xs font-semibold bg-white/5 hover:bg-white/10 text-white rounded-xl transition-all cursor-pointer"
+                      >
+                        Close Portal Tracker
+                      </button>
+                    </div>
+                  </motion.div>
+                </div>
+              );
+            })()}
+          </AnimatePresence>
+        </div>
       ) : (
         /* Fallback empty view or error state */
         <div className="p-8 text-center text-slate-500 italic text-xs">
@@ -2420,6 +2896,17 @@ export default function AdminPanel({
             className="px-4 py-2 bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 font-display font-bold text-xs rounded-lg border border-emerald-500/30 flex items-center gap-2 transition-all cursor-pointer"
           >
             <Plus className="w-4 h-4" /> Add WhatsApp Contact Button
+          </button>
+        )}
+        {activeSubTab === 'users' && !isAddingUser && !editingUserPhone && (
+          <button
+            onClick={() => {
+              setIsAddingUser(true);
+              setUserForm({ fullName: '', mobileNumber: '' });
+            }}
+            className="px-4 py-2 bg-sky-500/20 hover:bg-sky-500/30 text-sky-300 font-display font-bold text-xs rounded-lg border border-sky-500/30 flex items-center gap-2 transition-all cursor-pointer"
+          >
+            <Plus className="w-4 h-4" /> Add Custom User Account
           </button>
         )}
       </div>

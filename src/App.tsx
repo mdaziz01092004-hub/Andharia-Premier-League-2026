@@ -40,6 +40,7 @@ import {
   saveAdminPasswordDb,
   fetchUsersDb,
   saveUserDb,
+  deleteUserDb,
   fetchWhatsAppContactsDb,
   saveWhatsAppContactsDb
 } from './utils/supabase';
@@ -127,27 +128,179 @@ export default function App() {
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
 
   const handleRegisterUser = async (user: AppUser) => {
-    const updated = [...registeredUsers, user];
+    const now = new Date().toISOString();
+    const newUser: AppUser = {
+      fullName: user.fullName.trim(),
+      mobileNumber: user.mobileNumber.trim(),
+      registeredAt: now,
+      lastLoginAt: now,
+      loginCount: 1,
+      logoutCount: 0,
+      activities: [
+        { type: 'signup', timestamp: now },
+        { type: 'login', timestamp: now }
+      ]
+    };
+
+    const updated = [...registeredUsers, newUser];
     setRegisteredUsers(updated);
     localStorage.setItem('apl_registered_users', JSON.stringify(updated));
     if (isSupabaseConfigured) {
       try {
-        await saveUserDb(user);
+        await saveUserDb(newUser);
       } catch (err) {
         console.error('Error saving user to database:', err);
       }
     }
   };
 
-  const handleLoginUser = (user: AppUser) => {
-    setCurrentUser(user);
-    localStorage.setItem('apl_current_user', JSON.stringify(user));
+  const handleDeleteUser = async (mobileNumber: string) => {
+    const updated = registeredUsers.filter(u => u.mobileNumber !== mobileNumber);
+    setRegisteredUsers(updated);
+    localStorage.setItem('apl_registered_users', JSON.stringify(updated));
+    if (isSupabaseConfigured) {
+      try {
+        await deleteUserDb(mobileNumber);
+      } catch (err) {
+        console.error('Error deleting user from database:', err);
+      }
+    }
   };
 
-  const handleLogoutUser = () => {
+  const handleUpdateUser = async (oldMobile: string, updatedUser: AppUser) => {
+    let updated = [...registeredUsers];
+    const index = updated.findIndex(u => u.mobileNumber === oldMobile);
+    
+    // Preserve existing activities and login details if we are just updating info
+    const target = index !== -1 ? updated[index] : null;
+    const resolvedUser: AppUser = {
+      ...updatedUser,
+      registeredAt: updatedUser.registeredAt || target?.registeredAt || new Date().toISOString(),
+      lastLoginAt: updatedUser.lastLoginAt || target?.lastLoginAt || undefined,
+      lastLogoutAt: updatedUser.lastLogoutAt || target?.lastLogoutAt || undefined,
+      loginCount: updatedUser.loginCount !== undefined ? updatedUser.loginCount : (target?.loginCount || 0),
+      logoutCount: updatedUser.logoutCount !== undefined ? updatedUser.logoutCount : (target?.logoutCount || 0),
+      activities: updatedUser.activities || target?.activities || []
+    };
+
+    if (index !== -1) {
+      updated[index] = resolvedUser;
+    } else {
+      updated.push(resolvedUser);
+    }
+    setRegisteredUsers(updated);
+    localStorage.setItem('apl_registered_users', JSON.stringify(updated));
+
+    if (isSupabaseConfigured) {
+      try {
+        if (oldMobile !== resolvedUser.mobileNumber) {
+          await deleteUserDb(oldMobile);
+        }
+        await saveUserDb(resolvedUser);
+      } catch (err) {
+        console.error('Error updating user in database:', err);
+      }
+    }
+  };
+
+  const handleLoginUser = async (user: AppUser) => {
+    const now = new Date().toISOString();
+    const target = registeredUsers.find(u => u.mobileNumber === user.mobileNumber);
+    
+    // Check if the last activity was already a login within the last 5 seconds to avoid duplication
+    const lastActivity = target?.activities?.[target.activities.length - 1];
+    const isRecentLogin = lastActivity && 
+      lastActivity.type === 'login' && 
+      (new Date(now).getTime() - new Date(lastActivity.timestamp).getTime() < 5000);
+
+    if (target && isRecentLogin) {
+      setCurrentUser(target);
+      localStorage.setItem('apl_current_user', JSON.stringify(target));
+      return;
+    }
+
+    const updatedUser: AppUser = {
+      fullName: user.fullName,
+      mobileNumber: user.mobileNumber,
+      registeredAt: target?.registeredAt || user.registeredAt || now,
+      lastLoginAt: now,
+      lastLogoutAt: target?.lastLogoutAt || user.lastLogoutAt || undefined,
+      loginCount: (target?.loginCount || user.loginCount || 0) + 1,
+      logoutCount: target?.logoutCount || user.logoutCount || 0,
+      activities: [
+        ...(target?.activities || user.activities || []),
+        { type: 'login', timestamp: now }
+      ]
+    };
+
+    const updatedList = registeredUsers.map(u => 
+      u.mobileNumber === user.mobileNumber ? updatedUser : u
+    );
+    if (!registeredUsers.some(u => u.mobileNumber === user.mobileNumber)) {
+      updatedList.push(updatedUser);
+    }
+    
+    setRegisteredUsers(updatedList);
+    localStorage.setItem('apl_registered_users', JSON.stringify(updatedList));
+    setCurrentUser(updatedUser);
+    localStorage.setItem('apl_current_user', JSON.stringify(updatedUser));
+
+    if (isSupabaseConfigured) {
+      try {
+        await saveUserDb(updatedUser);
+      } catch (err) {
+        console.error('Error updating user login database state:', err);
+      }
+    }
+  };
+
+  const handleLogoutUser = async () => {
+    if (!currentUser) return;
+    
+    const now = new Date().toISOString();
+    const target = registeredUsers.find(u => u.mobileNumber === currentUser.mobileNumber);
+    
+    const updatedUser: AppUser = {
+      fullName: currentUser.fullName,
+      mobileNumber: currentUser.mobileNumber,
+      registeredAt: target?.registeredAt || currentUser.registeredAt || now,
+      lastLoginAt: target?.lastLoginAt || currentUser.lastLoginAt || undefined,
+      lastLogoutAt: now,
+      loginCount: target?.loginCount || currentUser.loginCount || 1,
+      logoutCount: (target?.logoutCount || currentUser.logoutCount || 0) + 1,
+      activities: [
+        ...(target?.activities || currentUser.activities || []),
+        { type: 'logout', timestamp: now }
+      ]
+    };
+
+    const updatedList = registeredUsers.map(u => 
+      u.mobileNumber === currentUser.mobileNumber ? updatedUser : u
+    );
+    
+    setRegisteredUsers(updatedList);
+    localStorage.setItem('apl_registered_users', JSON.stringify(updatedList));
     setCurrentUser(null);
     localStorage.removeItem('apl_current_user');
+
+    if (isSupabaseConfigured) {
+      try {
+        await saveUserDb(updatedUser);
+      } catch (err) {
+        console.error('Error updating user logout database state:', err);
+      }
+    }
   };
+
+  // Automatically trigger mandatory signup modal after a few seconds if user is not logged in
+  useEffect(() => {
+    if (!currentUser) {
+      const timer = setTimeout(() => {
+        setIsAuthModalOpen(true);
+      }, 4000); // 4 seconds delay
+      return () => clearTimeout(timer);
+    }
+  }, [currentUser]);
 
   // WhatsApp Contacts State
   const [whatsAppContacts, setWhatsAppContacts] = useState<WhatsAppContact[]>(() => {
@@ -968,6 +1121,9 @@ export default function App() {
               onUpdatePassword={handleUpdatePassword}
               whatsAppContacts={whatsAppContacts}
               onUpdateWhatsAppContacts={handleUpdateWhatsAppContacts}
+              registeredUsers={registeredUsers}
+              onDeleteUser={handleDeleteUser}
+              onUpdateUser={handleUpdateUser}
               onLogout={handleLogout}
             />
           </motion.section>
@@ -1256,6 +1412,7 @@ export default function App() {
         onLogin={handleLoginUser}
         registeredUsers={registeredUsers}
         onRegisterUser={handleRegisterUser}
+        isMandatory={!currentUser}
       />
     </div>
   );

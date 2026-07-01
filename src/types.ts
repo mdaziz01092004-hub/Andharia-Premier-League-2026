@@ -10,7 +10,7 @@ export interface Team {
   contactNumber: string;
   village: string;
   iconPlayer: string;
-  players: string[]; // up to 10 players from one village
+  players: string[]; // up to 11 players total (Captain, Icon, and 9 village players)
   teamColor: string;
   registeredAt: string;
   status?: 'pending' | 'approved' | 'rejected';
@@ -50,9 +50,20 @@ export interface Rule {
   visible: boolean;
 }
 
+export interface UserActivity {
+  type: 'signup' | 'login' | 'logout';
+  timestamp: string;
+}
+
 export interface AppUser {
   fullName: string;
   mobileNumber: string;
+  registeredAt?: string;
+  lastLoginAt?: string;
+  lastLogoutAt?: string;
+  loginCount?: number;
+  logoutCount?: number;
+  activities?: UserActivity[];
 }
 
 export interface WhatsAppContact {
