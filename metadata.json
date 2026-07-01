@@ -1,0 +1,6 @@
+{
+  "name": "Andharia Premier League 2026",
+  "description": "An interactive, 3D animated glassmorphic portal for the Andharia Premier League 2026 cricket tournament.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
